@@ -30,62 +30,105 @@ export const CONSTRUCTION_PHASES = [
   '其他事項'
 ];
 
-// High-quality interior design images for random assignment
-export const DEFAULT_PROJECT_COVERS = [
-  'https://images.unsplash.com/photo-1600607686527-6fb886090705?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80', // Modern Living Room
-  'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80', // Minimalist
-  'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80', // Kitchen / Dining
-  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80', // Bright Window
-  'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80', // Dark/Elegant
-  'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80', // Bedroom
-  'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80'  // Nordic
-];
-
-// Helper to validate image size and aspect ratio
-export const validateImageFile = (file: File): Promise<boolean> => {
-  return new Promise((resolve) => {
-    // 1. File Size Check (1MB = 1,048,576 bytes)
-    const MAX_SIZE = 1 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
-      alert(`檔案過大！\n\n您的圖片大小為 ${(file.size / 1024 / 1024).toFixed(2)}MB。\n為了確保系統效能，請上傳 1MB 以下的圖片。`);
-      resolve(false);
-      return;
-    }
-
-    // 2. Aspect Ratio Check (Target 16:9 approx 1.77)
-    // We allow a loose tolerance (e.g., 1.4 to 2.2) to not be annoying,
-    // but warn on vertical or very square images.
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    
-    img.onload = () => {
-      const ratio = img.width / img.height;
-      URL.revokeObjectURL(objectUrl);
-
-      // 16:9 = 1.77
-      // 4:3 = 1.33
-      // 3:2 = 1.5
-      // Allow range roughly 1.4 to 2.2
-      if (ratio < 1.4 || ratio > 2.4) {
-        const proceed = window.confirm(
-          "比例提醒：\n\n這張圖片的比例似乎不是橫式 (16:9)，在列表中可能會被裁切。\n\n是否確定要使用此圖片？"
-        );
-        resolve(proceed);
-      } else {
-        resolve(true);
-      }
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      alert("無法讀取圖片檔案，請重試。");
-      resolve(false);
-    };
-
-    img.src = objectUrl;
-  });
-};
-
 export const MOCK_PROJECTS: DesignProject[] = [
-  // ... (Existing MOCK_PROJECTS content is unused in main app flow but kept for reference if needed)
+  {
+    id: 'P001',
+    projectName: '信義區林公館 - 現代極簡風',
+    clientName: '林先生',
+    assignedEmployee: '王小明',
+    address: '台北市信義區松智路',
+    contactPhone: '0912-345-678',
+    currentStage: ProjectStage.DESIGN,
+    estimatedCompletionDate: '2024-08-15',
+    latestProgressNotes: '【木作工程】平面配置圖 V2 已確認，目前正在挑選客廳主牆材質。',
+    clientRequests: '希望客廳能夠有大理石紋路的電視牆，並且需要預留掃地機器人的家。',
+    internalNotes: '客戶對預算較為敏感，材質挑選需控制成本。',
+    lastUpdatedTimestamp: Date.now() - 86400000 * 2,
+    imageUrl: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    history: [
+      {
+        id: 'h1',
+        timestamp: Date.now() - 86400000 * 5,
+        userId: 'u1',
+        userName: '王小明',
+        action: '專案立案',
+        details: '建立新專案資料'
+      },
+      {
+        id: 'h2',
+        timestamp: Date.now() - 86400000 * 2,
+        userId: 'u1',
+        userName: '王小明',
+        action: '木作工程',
+        details: '平面配置圖 V2 已確認，目前正在挑選客廳主牆材質。',
+        field: 'latestProgressNotes',
+        oldValue: '平面配置圖 V1 討論中',
+        newValue: '平面配置圖 V2 已確認，目前正在挑選客廳主牆材質。'
+      }
+    ]
+  },
+  {
+    id: 'P002',
+    projectName: '內湖科技園區 - 辦公室改裝',
+    clientName: '迅捷科技 HR',
+    assignedEmployee: '李雅婷',
+    address: '台北市內湖區瑞光路',
+    contactPhone: '02-8765-4321',
+    currentStage: ProjectStage.CONSTRUCTION,
+    estimatedCompletionDate: '2024-06-20',
+    latestProgressNotes: '【水電工程】泥作工程結束，水電進場拉線中。下週一預計木工進場。',
+    clientRequests: '會議室隔音要求加強，需確認隔音棉規格。',
+    internalNotes: '大樓施工規範嚴格，僅能週末進行有噪音工程。',
+    lastUpdatedTimestamp: Date.now() - 3600000 * 5,
+    imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    history: []
+  },
+  {
+    id: 'P003',
+    projectName: '大安區陳醫師診所',
+    clientName: '陳醫師',
+    assignedEmployee: '王小明',
+    address: '台北市大安區忠孝東路',
+    contactPhone: '0988-111-222',
+    currentStage: ProjectStage.CONTACT,
+    estimatedCompletionDate: '2024-12-01',
+    latestProgressNotes: '【其他事項】已完成現場丈量，初步報價單擬定中。',
+    clientRequests: '診間需要溫馨的色調，避免過於冷冰冰的感覺。',
+    internalNotes: '競爭對手亦在報價，需強調我們的售後服務優勢。',
+    lastUpdatedTimestamp: Date.now() - 86400000 * 5,
+    imageUrl: 'https://images.unsplash.com/photo-1504198458649-3128b932f49e?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    history: []
+  },
+  {
+    id: 'P004',
+    projectName: '板橋張宅 - 北歐親子宅',
+    clientName: '張太太',
+    assignedEmployee: '陳志豪',
+    address: '新北市板橋區縣民大道',
+    contactPhone: '0955-666-777',
+    currentStage: ProjectStage.ACCEPTANCE,
+    estimatedCompletionDate: '2024-05-30',
+    latestProgressNotes: '【驗收缺失改善】細清完成，屋主今日初驗，指出主臥油漆有一處不平整。',
+    clientRequests: '小孩房的窗簾希望能換成更遮光的款式。',
+    internalNotes: '尾款尚未收到，需追蹤。',
+    lastUpdatedTimestamp: Date.now() - 3600000,
+    imageUrl: 'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    history: []
+  },
+  {
+    id: 'P005',
+    projectName: '松山咖啡廳 - 商業空間',
+    clientName: '劉店長',
+    assignedEmployee: '王小明', // Reassigned to match existing user
+    address: '台北市松山區民生東路',
+    contactPhone: '0922-333-444',
+    currentStage: ProjectStage.COMPLETED,
+    estimatedCompletionDate: '2024-04-15',
+    latestProgressNotes: '【完工交付】已完工交屋，保固期開始。',
+    clientRequests: '無。',
+    internalNotes: '此案為範例作品，已安排攝影師下週拍攝。',
+    lastUpdatedTimestamp: Date.now() - 86400000 * 30,
+    imageUrl: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    history: []
+  }
 ];
