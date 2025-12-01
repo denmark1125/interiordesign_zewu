@@ -1,0 +1,84 @@
+import { DesignProject } from "../types";
+import { GoogleGenAI, Type } from "@google/genai";
+
+// Initialize Google GenAI client
+// The API key must be obtained exclusively from process.env.API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+export const generateProjectReport = async (project: DesignProject): Promise<string> => {
+  const prompt = `
+  請為以下室內設計專案撰寫一份專業的週報：
+  
+  專案名稱：${project.projectName}
+  目前階段：${project.currentStage}
+  負責人員：${project.assignedEmployee}
+  
+  本週最新進度：
+  ${project.latestProgressNotes}
+
+  客戶需求：
+  ${project.clientRequests}
+
+  內部備註：
+  ${project.internalNotes}
+
+  請包含：
+  1. 本週進度摘要
+  2. 下週預計事項
+  3. 注意事項 (基於客戶需求與內部備註)
+  
+  語氣請專業、簡潔。`;
+
+  try {
+    // Use gemini-2.5-flash for basic text tasks
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    return response.text || "AI 無法生成報告內容。";
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    return "生成週報時發生錯誤，請稍後再試。";
+  }
+};
+
+export const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<{analysis: string, suggestions: string[]}> => {
+  const prompt = `
+  針對以下室內設計專案問題進行分析與建議：
+  專案：${project.projectName} (${project.currentStage})
+  問題：${inputContent}
+  `;
+
+  try {
+    // Use gemini-3-pro-preview for complex reasoning tasks
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            analysis: { type: Type.STRING },
+            suggestions: { 
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            }
+          },
+          required: ["analysis", "suggestions"]
+        }
+      }
+    });
+
+    if (response.text) {
+      return JSON.parse(response.text);
+    }
+    throw new Error("Empty response from AI");
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    return {
+      analysis: "目前無法進行 AI 分析，請稍後再試。",
+      suggestions: ["建議諮詢專業技師", "確認現場施工圖面", "與業主討論替代方案"]
+    };
+  }
+};

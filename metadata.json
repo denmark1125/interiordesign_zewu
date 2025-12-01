@@ -1,0 +1,7 @@
+{
+  "name": "澤物專案管理",
+  "description": "專為室內設計公司打造的專案管理平台。協助追蹤案場進度、管理客戶需求，提升設計師與工務團隊協作效率。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
