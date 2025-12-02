@@ -1,9 +1,7 @@
-
 import React, { useState } from 'react';
 import { DesignProject, ProjectStage, User } from '../types';
-import { X, Plus, Loader2 } from 'lucide-react';
-import { setDoc, doc } from '../services/firebase';
-import { db } from '../services/firebase';
+import { X, Plus, Loader2, Upload, AlertCircle } from 'lucide-react';
+import { storage, ref, uploadBytes, getDownloadURL } from '../services/firebase';
 
 interface NewProjectModalProps {
   currentUser: User;
@@ -14,6 +12,7 @@ interface NewProjectModalProps {
 
 const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose, onSubmit, employeeNames }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [formData, setFormData] = useState<Partial<DesignProject>>({
     projectName: '',
@@ -26,9 +25,37 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
     internalNotes: '',
     address: '',
     contactPhone: '',
-    // Default image
     imageUrl: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80', 
   });
+
+  // Image Upload Logic
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 1. Check size (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        alert("圖片大小超過 2MB 限制，請選擇較小的圖片。");
+        return;
+    }
+
+    setIsUploading(true);
+    try {
+        // Sanitize filename
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+        const storageRef = ref(storage, `projects/covers/${Date.now()}_${sanitizedName}`);
+        
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+        
+        setFormData(prev => ({ ...prev, imageUrl: downloadURL }));
+    } catch (error) {
+        console.error("Upload failed", error);
+        alert("圖片上傳失敗，請稍後再試");
+    } finally {
+        setIsUploading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,15 +147,18 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">地址/地點</label>
-                <input
-                  type="text"
-                  placeholder="案場地址"
-                  className="w-full border-slate-300 rounded-lg p-2.5 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
-                  value={formData.address}
-                  onChange={e => setFormData({...formData, address: e.target.value})}
-                />
+                <label className="block text-sm font-bold text-slate-700 mb-1">封面照片 (Cover)</label>
+                <div className="flex items-center gap-3">
+                   <img src={formData.imageUrl} alt="Preview" className="w-12 h-12 rounded-lg object-cover border border-slate-200" />
+                   <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2">
+                      {isUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4"/>}
+                      {isUploading ? '上傳中...' : '上傳照片'}
+                      <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isUploading} />
+                   </label>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 ml-1">* 限制 2MB 以內</p>
               </div>
+
                <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">預計完工日</label>
                 <input
@@ -213,7 +243,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isUploading}
               className="px-5 py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-amber-700 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
