@@ -650,11 +650,11 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
       hasChanges = true;
     }
     
-    // Other field checks
+    // Client Requests - Only save data, DO NOT log to history
     if (formData.clientRequests !== project.clientRequests) {
-      newLogs.push({ id: `h-${Date.now()}-1`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name, action: '更新客戶需求', details: '修改了客戶需求項目', field: 'clientRequests', oldValue: project.clientRequests, newValue: formData.clientRequests });
       hasChanges = true;
     }
+
     if (formData.assignedEmployee !== project.assignedEmployee) {
        newLogs.push({ id: `h-${Date.now()}-4`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name, action: '變更負責人', details: `負責人從 ${project.assignedEmployee} 變更為 ${formData.assignedEmployee}`, field: 'assignedEmployee', oldValue: project.assignedEmployee, newValue: formData.assignedEmployee });
       hasChanges = true;
