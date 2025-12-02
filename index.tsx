@@ -434,7 +434,7 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">負責員工</label>
+                <label className="block text-sm font-bold text-slate-700 mb-1">負責人</label>
                 {currentUser.role === 'manager' || currentUser.role === 'engineer' ? (
                    <select className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.assignedEmployee} onChange={e => setFormData({...formData, assignedEmployee: e.target.value})}>
                      {employeeNames.map(name => <option key={name} value={name}>{name}</option>)}
@@ -597,7 +597,7 @@ const ProjectDashboard: React.FC<{ projects: DesignProject[]; onSelectProject: (
 
   return (
     <div className="space-y-6 animate-fade-in font-sans">
-      <div className="flex flex-col md:flex-row justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2><p className="text-slate-500 text-sm font-medium">{selectedEmployee === 'All' ? '全公司案場' : `${selectedEmployee} 的案場`}</p></div><div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200"><Filter className="w-4 h-4 text-slate-400" /><select className="bg-transparent font-bold text-slate-700 outline-none" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}><option value="All">顯示全部員工</option>{employeeNames.map(emp => <option key={emp} value={emp}>{emp}</option>)}</select></div></div>
+      <div className="flex flex-col md:flex-row justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2><p className="text-slate-500 text-sm font-medium">{selectedEmployee === 'All' ? '全公司案場' : `${selectedEmployee} 的案場`}</p></div><div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200"><Filter className="w-4 h-4 text-slate-400" /><select className="bg-transparent font-bold text-slate-700 outline-none" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}><option value="All">顯示全部人員</option>{employeeNames.map(emp => <option key={emp} value={emp}>{emp}</option>)}</select></div></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, idx) => (
           <button key={idx} onClick={() => onFilterClick(stat.filterType)} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col hover:scale-[1.02] transition-all text-left group">
@@ -747,7 +747,7 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
           )}
         </div>
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase tracking-wide">負責人</h3><div className="flex items-center gap-3"><div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center font-bold text-lg text-slate-600 border border-slate-200">{project.assignedEmployee.charAt(0)}</div><div><span className="font-bold text-lg text-slate-900">{project.assignedEmployee}</span><p className="text-xs text-slate-500 font-medium">Lead Designer</p></div></div>{(currentUser.role === 'manager' || currentUser.role === 'engineer') && <select value={formData.assignedEmployee} onChange={e => handleInputChange('assignedEmployee', e.target.value)} className="mt-4 w-full border border-slate-300 rounded-lg p-2.5 bg-slate-50 font-medium text-sm outline-none">{employeeNames.map(n => <option key={n} value={n}>{n}</option>)}</select>}</div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase tracking-wide">負責人</h3><div className="flex items-center gap-3"><div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center font-bold text-lg text-slate-600 border border-slate-200">{project.assignedEmployee.charAt(0)}</div><div><span className="font-bold text-lg text-slate-900">{project.assignedEmployee}</span><p className="text-xs text-slate-500 font-medium">Project Lead</p></div></div>{(currentUser.role === 'manager' || currentUser.role === 'engineer') && <select value={formData.assignedEmployee} onChange={e => handleInputChange('assignedEmployee', e.target.value)} className="mt-4 w-full border border-slate-300 rounded-lg p-2.5 bg-slate-50 font-medium text-sm outline-none">{employeeNames.map(n => <option key={n} value={n}>{n}</option>)}</select>}</div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase tracking-wide">聯絡資訊</h3><div className="space-y-4"><div><div className="flex gap-2 mb-1.5"><Phone className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">電話</span></div><input value={formData.contactPhone} onChange={e => handleInputChange('contactPhone', e.target.value)} className={inputClass}/></div><div><div className="flex gap-2 mb-1.5"><MapPin className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">地址</span></div><input value={formData.address} onChange={e => handleInputChange('address', e.target.value)} className={inputClass}/></div></div></div>
         </div>
       </div>
@@ -839,7 +839,10 @@ const App: React.FC = () => {
     }
   }, [projects, selectedProject]);
 
-  const employeeNames = useMemo(() => users.filter(u => u.role === 'employee').map(u => u.name), [users]);
+  const employeeNames = useMemo(() => 
+    users.filter(u => u.role === 'employee' || u.role === 'manager').map(u => u.name), 
+    [users]
+  );
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
