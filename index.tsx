@@ -89,7 +89,6 @@ export const DEFAULT_PROJECT_COVERS = [
 ];
 
 // --- Custom SVG Logo Component ---
-// Replaces the external image URL to prevent broken links
 const ZewuIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
     {/* Frame */}
@@ -132,16 +131,16 @@ const getRandomCover = () => {
 
 const validateImageFile = (file: File): Promise<boolean> => {
   return new Promise((resolve) => {
-    // 1. STRICT LIMIT: 2MB (2 * 1024 * 1024 bytes)
+    // STRICT LIMIT: 2MB (2 * 1024 * 1024 bytes)
     const MAX_SIZE = 2 * 1024 * 1024; 
     
     if (file.size > MAX_SIZE) {
-      alert("圖片大小超過 2MB 限制，請選擇較小的照片或截圖。");
+      alert("圖片過大！限制為 2MB 以內。\n請使用較小的照片或截圖。");
       resolve(false); 
       return;
     }
 
-    // 2. NO CONFIRM DIALOGS: Directly allow upload to prevent mobile freeze
+    // NO CONFIRM DIALOGS: Directly allow upload to prevent mobile freeze
     console.log("Image validated:", file.name, file.size);
     resolve(true);
   });
@@ -164,10 +163,8 @@ const uploadImageFile = async (file: File, projectId: string): Promise<string> =
 // ==========================================
 
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key 未設定或環境變數讀取失敗");
-  }
+  // Use the hardcoded key directly to prevent environment variable issues in APK/Browser
+  const apiKey = "AIzaSyD5y1wnTV3bsZ85Dg-PO3TGcHWADQem7Rk";
   return new GoogleGenAI({ apiKey });
 };
 
@@ -192,7 +189,7 @@ const generateProjectReport = async (project: DesignProject): Promise<string> =>
     return response.text || "AI 無法生成報告內容。";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "AI 服務暫時無法使用，請確認 API Key 設定或網路連線。";
+    return "AI 服務暫時無法使用，請確認網路連線。";
   }
 };
 
@@ -257,10 +254,11 @@ const LoginScreen: React.FC<{ onLogin: (user: User) => void; users: User[] }> = 
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans">
       <div className="text-center mb-8 flex flex-col items-center">
         <div className="bg-white p-6 rounded-2xl mb-4 shadow-xl border border-slate-100">
-           <ZewuIcon className="w-20 h-20 text-slate-800" />
+           {/* BRAND COLOR: #54534d */}
+           <ZewuIcon className="w-20 h-20 text-[#54534d]" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-800 tracking-[0.2em] font-serif">澤物設計</h1>
-        <p className="text-slate-500 mt-2 font-light tracking-widest text-sm">ZEWU INTERIOR DESIGN</p>
+        <h1 className="text-3xl font-bold text-[#54534d] tracking-[0.2em] font-serif">澤物設計</h1>
+        <p className="text-[#54534d] mt-2 font-light tracking-widest text-sm">ZEWU INTERIOR DESIGN</p>
       </div>
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 max-w-md w-full">
         <h2 className="text-xl font-bold text-slate-800 mb-6 text-center">員工登入</h2>
@@ -820,13 +818,14 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
         style={{ fontFamily: 'Noto Sans TC, sans-serif' }}
       >
         {/* Header */}
-        <div className="flex justify-between items-end border-b-4 border-slate-900 pb-6 mb-8">
+        <div className="flex justify-between items-end border-b-4 border-[#54534d] pb-6 mb-8">
             <div>
                 <div className="flex items-center gap-4 mb-2">
-                    <ZewuIcon className="h-20 w-auto text-slate-900" />
+                    {/* BRAND COLOR: #54534d */}
+                    <ZewuIcon className="h-20 w-auto text-[#54534d]" />
                     <div className="flex flex-col">
-                        <span className="text-3xl font-bold tracking-[0.2em] text-slate-900 font-serif">澤物設計</span>
-                        <span className="text-sm font-light tracking-[0.3em] text-slate-500">ZEWU INTERIOR DESIGN</span>
+                        <span className="text-3xl font-bold tracking-[0.2em] text-[#54534d] font-serif">澤物設計</span>
+                        <span className="text-sm font-light tracking-[0.3em] text-[#54534d]">ZEWU INTERIOR DESIGN</span>
                     </div>
                 </div>
                 <h1 className="text-4xl font-bold text-slate-900 mt-6">{formData.projectName}</h1>
@@ -918,7 +917,7 @@ const Layout: React.FC<{ children: React.ReactNode; activeTab: string; onTabChan
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       {isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto lg:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
-        <div className="flex items-center justify-between p-6 border-b border-slate-800/50"><div className="flex items-center gap-3"><div className="bg-white p-1.5 rounded-lg"><ZewuIcon className="h-8 w-8 text-slate-900" /></div><div><h1 className="text-lg font-bold tracking-wide leading-none">澤物設計</h1><span className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">Management</span></div></div><button className="lg:hidden p-1 hover:bg-slate-800 rounded-md transition-colors" onClick={() => setIsSidebarOpen(false)}><X className="h-5 w-5 text-slate-400" /></button></div>
+        <div className="flex items-center justify-between p-6 border-b border-slate-800/50"><div className="flex items-center gap-3"><div className="bg-white p-1.5 rounded-lg"><ZewuIcon className="h-8 w-8 text-[#54534d]" /></div><div><h1 className="text-lg font-bold tracking-wide leading-none">澤物設計</h1><span className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">Management</span></div></div><button className="lg:hidden p-1 hover:bg-slate-800 rounded-md transition-colors" onClick={() => setIsSidebarOpen(false)}><X className="h-5 w-5 text-slate-400" /></button></div>
         <nav className="p-4 space-y-1.5 flex-1 overflow-y-auto flex flex-col">
           {canViewDashboard && <button onClick={() => { onTabChange('dashboard'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${activeTab === 'dashboard' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><LayoutDashboard className="h-5 w-5 mr-3" />總覽儀表板</button>}
           <button onClick={() => { onTabChange('projects'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${activeTab === 'projects' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><FolderKanban className="h-5 w-5 mr-3" />{canViewDashboard ? '所有專案列表' : '我的專案'}</button>
@@ -928,7 +927,7 @@ const Layout: React.FC<{ children: React.ReactNode; activeTab: string; onTabChan
         <div className="p-4 bg-slate-950 border-t border-slate-800/50"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="h-9 w-9 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center font-bold text-sm text-white border-2 border-slate-800 shadow-md">{currentUser.avatarInitials}</div><div className="overflow-hidden"><p className="text-sm font-bold text-white truncate w-28">{currentUser.name}</p><p className="text-xs text-slate-500 capitalize flex items-center gap-1">{currentUser.role === 'manager' && 'Administrator'}{currentUser.role === 'engineer' && 'System Engineer'}{currentUser.role === 'employee' && 'Designer'}</p></div></div><button onClick={onLogout} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-slate-800 rounded-lg" title="登出"><LogOut className="w-5 h-5" /></button></div></div>
       </aside>
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-20 shadow-sm"><div className="flex items-center gap-2 font-bold text-slate-800"><div className="bg-white p-1 rounded-md border border-slate-200"><ZewuIcon className="h-8 w-8 text-slate-800" /></div>澤物設計</div><button onClick={() => setIsSidebarOpen(true)} className="p-2 -mr-2 active:bg-slate-100 rounded-full"><Menu className="h-6 w-6 text-slate-700" /></button></header>
+        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-20 shadow-sm"><div className="flex items-center gap-2 font-bold text-[#54534d]"><div className="bg-white p-1 rounded-md border border-slate-200"><ZewuIcon className="h-8 w-8 text-[#54534d]" /></div>澤物設計</div><button onClick={() => setIsSidebarOpen(true)} className="p-2 -mr-2 active:bg-slate-100 rounded-full"><Menu className="h-6 w-6 text-slate-700" /></button></header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth"><div className="max-w-7xl mx-auto">{children}</div></main>
       </div>
     </div>
