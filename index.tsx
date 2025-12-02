@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon } from 'lucide-react';
@@ -104,7 +103,7 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
-const analytics = getAnalytics(app); // Added Analytics
+const analytics = getAnalytics(app);
 
 const usersCollection = collection(db, "users");
 const projectsCollection = collection(db, "projects");
@@ -139,7 +138,7 @@ const validateImageFile = (file: File): Promise<boolean> => {
       resolve(true);
     };
     img.onerror = () => {
-      alert("無法讀取圖片檔案");
+      alert("無法讀取圖片檔案，請確認檔案格式是否正確。");
       reject(false);
     };
   });
@@ -147,48 +146,50 @@ const validateImageFile = (file: File): Promise<boolean> => {
 
 const uploadImageFile = async (file: File, projectId: string): Promise<string> => {
   try {
-    // Use timestamp to prevent caching issues if same name
     const storageRef = ref(storage, `project-covers/${projectId}/${Date.now()}_${file.name}`);
     await uploadBytes(storageRef, file);
     return await getDownloadURL(storageRef);
   } catch (error) {
     console.error("Upload failed", error);
-    throw new Error("圖片上傳失敗");
+    throw new Error("圖片上傳失敗，請檢查網路連線或稍後再試。");
   }
 };
 
 // ==========================================
-// 3. GEMINI SERVICE (Lazy Init)
+// 3. GEMINI SERVICE (Lazy Init for APK Safety)
 // ==========================================
 
 const generateProjectReport = async (project: DesignProject): Promise<string> => {
-  const prompt = `
-  請為以下室內設計專案撰寫一份專業的週報：
-  
-  專案名稱：${project.projectName}
-  目前階段：${project.currentStage}
-  負責人員：${project.assignedEmployee}
-  
-  本週最新進度：
-  ${project.latestProgressNotes}
-
-  客戶需求：
-  ${project.clientRequests}
-
-  內部備註：
-  ${project.internalNotes}
-
-  請包含：
-  1. 本週進度摘要
-  2. 下週預計事項
-  3. 注意事項 (基於客戶需求與內部備註)
-  
-  語氣請專業、簡潔。`;
-
   try {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) return "API Key 未設定，無法使用 AI 功能。";
+    if (!apiKey) {
+      alert("API Key 未設定或環境變數讀取失敗，無法使用 AI 功能。");
+      return "AI 服務目前無法使用。";
+    }
     
+    const prompt = `
+    請為以下室內設計專案撰寫一份專業的週報：
+    
+    專案名稱：${project.projectName}
+    目前階段：${project.currentStage}
+    負責人員：${project.assignedEmployee}
+    
+    本週最新進度：
+    ${project.latestProgressNotes}
+
+    客戶需求：
+    ${project.clientRequests}
+
+    內部備註：
+    ${project.internalNotes}
+
+    請包含：
+    1. 本週進度摘要
+    2. 下週預計事項
+    3. 注意事項 (基於客戶需求與內部備註)
+    
+    語氣請專業、簡潔。`;
+
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -202,15 +203,18 @@ const generateProjectReport = async (project: DesignProject): Promise<string> =>
 };
 
 const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<{analysis: string, suggestions: string[]}> => {
-  const prompt = `
-  針對以下室內設計專案問題進行分析與建議：
-  專案：${project.projectName} (${project.currentStage})
-  問題：${inputContent}
-  `;
-
   try {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) return { analysis: "API Key 未設定。", suggestions: [] };
+    if (!apiKey) {
+      alert("API Key 未設定，無法使用 AI 功能。");
+      return { analysis: "無法連接 AI 服務", suggestions: [] };
+    }
+
+    const prompt = `
+    針對以下室內設計專案問題進行分析與建議：
+    專案：${project.projectName} (${project.currentStage})
+    問題：${inputContent}
+    `;
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
@@ -328,12 +332,13 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       try {
-        await validateImageFile(file);
-        setImageFile(file);
-        setPreviewUrl(URL.createObjectURL(file));
+        const isValid = await validateImageFile(file);
+        if (isValid) {
+          setImageFile(file);
+          setPreviewUrl(URL.createObjectURL(file));
+        }
       } catch (err) {
-        // Validation failed, reset input
-        e.target.value = '';
+        e.target.value = ''; // Reset input
       }
     }
   };
@@ -378,7 +383,7 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
       onSubmit(newProject);
     } catch (error) {
       console.error("Error creating project:", error);
-      alert("建立專案失敗");
+      alert("建立專案失敗，請稍後再試");
       setIsSubmitting(false);
     }
   };
@@ -392,21 +397,28 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
         </div>
         
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Cover Image Selection */}
+          {/* Cover Image Selection - Improved for Mobile Touch */}
           <div className="space-y-3">
              <label className="block text-sm font-bold text-slate-700">封面照片</label>
              <div className="relative h-48 rounded-xl overflow-hidden border border-slate-200 group bg-slate-100">
                 <img src={previewUrl} className="w-full h-full object-cover transition-opacity duration-300" alt="Cover Preview" />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-4">
-                    <label className="cursor-pointer bg-white text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-lg">
-                       <Upload className="w-4 h-4" /> 上傳照片
-                       <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
-                    </label>
-                    <button type="button" onClick={handleRandomCover} className="bg-white/90 text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-white transition-colors shadow-lg">
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-4 transition-opacity">
+                    <div className="relative">
+                      <button type="button" className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-lg pointer-events-none">
+                        <Upload className="w-4 h-4" /> 上傳照片
+                      </button>
+                      <input 
+                        type="file" 
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                        accept="image/*" 
+                        onChange={handleImageChange} 
+                      />
+                    </div>
+                    <button type="button" onClick={handleRandomCover} className="bg-white/90 text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-white transition-colors shadow-lg z-10">
                        <RefreshCw className="w-4 h-4" /> 隨機產生
                     </button>
                 </div>
-                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm">
+                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm pointer-events-none">
                    建議比例 16:9 | 限 1MB
                 </div>
              </div>
@@ -521,7 +533,7 @@ const TeamManagement: React.FC<{ users: User[]; currentUser: User; onAddUser: (u
       
       {/* Mobile Card View */}
       <div className="md:hidden space-y-4">
-        {users.length === 0 ? <p className="text-center text-slate-400 py-4">目前沒有成員資料或正在讀取中...</p> : users.map(user => (
+        {users.length === 0 ? <p className="text-center text-slate-400 py-4">讀取中或無成員資料...</p> : users.map(user => (
           <div key={user.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
              <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-4">
@@ -633,14 +645,17 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
        const file = e.target.files[0];
        try {
          setIsUploading(true);
-         await validateImageFile(file);
-         const url = await uploadImageFile(file, project.id);
-         handleInputChange('imageUrl', url);
-         // Auto save the image update
-         onUpdateProject({ ...formData, imageUrl: url, lastUpdatedTimestamp: Date.now() });
-         alert("封面更新成功！");
+         const isValid = await validateImageFile(file);
+         if (isValid) {
+            const url = await uploadImageFile(file, project.id);
+            handleInputChange('imageUrl', url);
+            // Auto save the image update
+            onUpdateProject({ ...formData, imageUrl: url, lastUpdatedTimestamp: Date.now() });
+            alert("封面更新成功！");
+         }
        } catch (err) {
          console.error(err);
+         // Error handled in utility
        } finally {
          setIsUploading(false);
        }
@@ -658,12 +673,21 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
             <h1 className="text-3xl font-bold leading-tight">{project.projectName}</h1>
             <p className="font-medium text-slate-200">{project.clientName} | {project.address}</p>
         </div>
-        <div className="absolute top-4 right-4">
-            <label className={`bg-white/90 backdrop-blur text-slate-800 p-2 rounded-lg cursor-pointer hover:bg-white transition-colors shadow-lg flex items-center gap-2 font-bold text-xs ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
-               {isUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Camera className="w-4 h-4"/>}
-               更換封面
-               <input type="file" className="hidden" accept="image/*" onChange={handleUpdateCover} />
-            </label>
+        <div className="absolute top-4 right-4 z-10">
+             {/* Mobile-Friendly File Input Overlay */}
+             <div className="relative">
+                <button className={`bg-white/90 backdrop-blur text-slate-800 p-2 rounded-lg hover:bg-white transition-colors shadow-lg flex items-center gap-2 font-bold text-xs ${isUploading ? 'opacity-50' : ''}`}>
+                    {isUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Camera className="w-4 h-4"/>}
+                    更換封面
+                </button>
+                <input 
+                    type="file" 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                    accept="image/*" 
+                    onChange={handleUpdateCover} 
+                    disabled={isUploading}
+                />
+            </div>
         </div>
       </div>
       <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm"><button onClick={onBack} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 rounded-lg text-slate-600 font-bold transition-colors"><ArrowLeft className="w-4 h-4"/>返回</button><button onClick={handleSaveGeneral} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm hover:bg-emerald-700 transition-colors"><Save className="w-4 h-4"/>儲存</button></div>
@@ -784,13 +808,42 @@ const App: React.FC = () => {
   const handleDeleteProject = async (id: string) => { await deleteDoc(doc(db, "projects", id)); setSelectedProject(null); setView(previousView); };
   const handleCreateProject = async (p: DesignProject) => { await setDoc(doc(db, "projects", p.id), p); setShowNewProjectModal(false); handleSelectProject(p); };
   
+  // --- Updated Export Function with Full History ---
   const handleExportData = () => {
     if (projects.length === 0) return alert("無資料");
-    const headers = ['案名', '客戶', '負責人', '階段', '完工日', '地址', '電話', '進度', '需求', '備註'];
-    const rows = projects.map(p => [p.projectName, p.clientName, p.assignedEmployee, p.currentStage, p.estimatedCompletionDate, p.address, p.contactPhone, `"${(p.latestProgressNotes||'').replace(/"/g,'""')}"`, `"${(p.clientRequests||'').replace(/"/g,'""')}"`, `"${(p.internalNotes||'').replace(/"/g,'""')}"`]);
+    
+    // Headers
+    const headers = ['案名', '客戶', '負責人', '階段', '完工日', '地址', '電話', '進度', '需求', '備註', '完整時間軸紀錄'];
+    
+    // Process Rows
+    const rows = projects.map(p => {
+        // Format History Logs
+        const historyText = (p.history || [])
+          .sort((a, b) => b.timestamp - a.timestamp) // Newest first
+          .map(h => {
+             const time = new Date(h.timestamp).toLocaleString();
+             return `[${time}] ${h.userName} (${h.action}): ${h.details}`;
+          })
+          .join('\n'); // Separate by newline
+
+        return [
+            p.projectName, 
+            p.clientName, 
+            p.assignedEmployee, 
+            p.currentStage, 
+            p.estimatedCompletionDate, 
+            p.address, 
+            p.contactPhone, 
+            `"${(p.latestProgressNotes||'').replace(/"/g,'""')}"`, 
+            `"${(p.clientRequests||'').replace(/"/g,'""')}"`, 
+            `"${(p.internalNotes||'').replace(/"/g,'""')}"`,
+            `"${historyText.replace(/"/g,'""')}"` // Add history column
+        ];
+    });
+
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
-    const link = document.createElement('a'); link.href = url; link.download = `Projects_${new Date().toISOString().split('T')[0]}.csv`; document.body.appendChild(link); link.click();
+    const link = document.createElement('a'); link.href = url; link.download = `Projects_Full_${new Date().toISOString().split('T')[0]}.csv`; document.body.appendChild(link); link.click();
   };
 
   if (isLoading) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4 font-sans"><Loader2 className="w-10 h-10 text-accent animate-spin"/><p className="text-slate-500 font-bold">載入資料中...</p></div>;
