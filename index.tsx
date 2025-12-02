@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -103,6 +104,7 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const analytics = getAnalytics(app); // Added Analytics
 
 const usersCollection = collection(db, "users");
 const projectsCollection = collection(db, "projects");
@@ -127,9 +129,6 @@ const validateImageFile = (file: File): Promise<boolean> => {
     img.src = URL.createObjectURL(file);
     img.onload = () => {
       const ratio = img.width / img.height;
-      const targetRatio = 16 / 9; // ~1.77
-      // Tolerance: Allow between 1.3 (4:3-ish) and 2.4 (Ultra-wide)
-      // Strict 16:9 is hard for users, so we just warn on extremes (like portrait)
       if (ratio < 1.0) { // Vertical image
          const proceed = window.confirm("偵測到您上傳的是「直式圖片」，建議使用 16:9 橫式圖片以獲得最佳瀏覽體驗。\n\n是否仍要繼續？");
          if (!proceed) {
@@ -519,6 +518,33 @@ const TeamManagement: React.FC<{ users: User[]; currentUser: User; onAddUser: (u
           </form>
         </div>
       )}
+      
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-4">
+        {users.length === 0 ? <p className="text-center text-slate-400 py-4">目前沒有成員資料或正在讀取中...</p> : users.map(user => (
+          <div key={user.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+             <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-base font-bold border border-slate-200 shadow-sm">
+                      {user.avatarInitials}
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                        {user.name}
+                        {user.id === currentUser.id && <span className="text-[10px] bg-accent text-white px-1.5 py-0.5 rounded font-bold">ME</span>}
+                      </div>
+                      <div className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded w-fit mt-1">@{user.username}</div>
+                    </div>
+                  </div>
+                  {renderRoleBadge(user.role)}
+             </div>
+             <div className="border-t border-slate-100 pt-3 flex justify-end gap-2">
+                 {user.id !== currentUser.id && <button onClick={() => onDeleteUser(user.id)} className="p-2 text-red-500"><Trash2 className="w-4 h-4"/></button>}
+             </div>
+          </div>
+        ))}
+      </div>
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hidden md:block">
         <table className="w-full text-left">
           <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase font-bold tracking-wider"><tr><th className="px-6 py-4">姓名 / 帳號</th><th className="px-6 py-4">角色</th><th className="px-6 py-4">權限設定</th><th className="px-6 py-4 text-right">操作</th></tr></thead>
@@ -709,15 +735,31 @@ const App: React.FC = () => {
   const [projectFilter, setProjectFilter] = useState<ProjectFilterType>('ALL');
 
   useEffect(() => {
-    const unsubUsers = onSnapshot(query(usersCollection, orderBy("name")), (snap) => {
-      const fetched = snap.docs.map(d => d.data() as User);
-      if (fetched.length === 0) INITIAL_USERS.forEach(u => setDoc(doc(db, "users", u.id), u));
-      else setUsers(fetched);
+    // 1. Sync Users
+    const unsubUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
+      const fetchedUsers = snapshot.docs.map(doc => doc.data() as User);
+      if (fetchedUsers.length === 0) {
+        // Init default users if DB empty
+        INITIAL_USERS.forEach(async (u) => {
+          await setDoc(doc(db, "users", u.id), u);
+        });
+      } else {
+        setUsers(fetchedUsers);
+      }
+    }, (error) => {
+      console.error("Users Sync Error:", error);
     });
-    const unsubProjects = onSnapshot(query(projectsCollection, orderBy("lastUpdatedTimestamp", "desc")), (snap) => {
-      setProjects(snap.docs.map(d => d.data() as DesignProject));
+
+    // 2. Sync Projects
+    const unsubProjects = onSnapshot(query(projectsCollection, orderBy("lastUpdatedTimestamp", "desc")), (snapshot) => {
+      const fetchedProjects = snapshot.docs.map(doc => doc.data() as DesignProject);
+      setProjects(fetchedProjects);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Projects Sync Error:", error);
       setIsLoading(false);
     });
+
     return () => { unsubUsers(); unsubProjects(); };
   }, []);
 
