@@ -117,41 +117,32 @@ const getRandomCover = () => {
 
 const validateImageFile = (file: File): Promise<boolean> => {
   return new Promise((resolve, reject) => {
-    // 1. Check Size (1MB = 1,048,576 bytes)
-    if (file.size > 1024 * 1024) {
-      alert("圖片大小超過 1MB 限制，請壓縮後再上傳。");
-      reject(false);
+    // 1. INCREASED LIMIT: Check Size (10MB = 10 * 1,048,576 bytes)
+    // Mobile photos are often large (3-5MB), so 1MB is too small.
+    const MAX_SIZE = 10 * 1024 * 1024; 
+    
+    if (file.size > MAX_SIZE) {
+      alert("圖片大小超過 10MB 限制，請選擇較小的照片。");
+      resolve(false); // Resolve false instead of reject to prevent uncaught errors
       return;
     }
 
-    // 2. Check Aspect Ratio (Tolerance for 16:9)
-    const img = new Image();
-    img.src = URL.createObjectURL(file);
-    img.onload = () => {
-      const ratio = img.width / img.height;
-      if (ratio < 1.0) { // Vertical image
-         const proceed = window.confirm("偵測到您上傳的是「直式圖片」，建議使用 16:9 橫式圖片以獲得最佳瀏覽體驗。\n\n是否仍要繼續？");
-         if (!proceed) {
-           reject(false);
-           return;
-         }
-      }
-      resolve(true);
-    };
-    img.onerror = () => {
-      alert("無法讀取圖片檔案，請確認檔案格式是否正確。");
-      reject(false);
-    };
+    // 2. REMOVED ASPECT RATIO BLOCKING
+    // Using window.confirm often hangs on mobile webviews. 
+    // We just accept the image as is to ensure upload success.
+    
+    resolve(true);
   });
 };
 
 const uploadImageFile = async (file: File, projectId: string): Promise<string> => {
   try {
     const storageRef = ref(storage, `project-covers/${projectId}/${Date.now()}_${file.name}`);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+    const snapshot = await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(snapshot.ref);
+    return url;
   } catch (error) {
-    console.error("Upload failed", error);
+    console.error("Upload failed details:", error);
     throw new Error("圖片上傳失敗，請檢查網路連線或稍後再試。");
   }
 };
@@ -336,8 +327,12 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
         if (isValid) {
           setImageFile(file);
           setPreviewUrl(URL.createObjectURL(file));
+        } else {
+           // Reset input if invalid
+           e.target.value = '';
         }
       } catch (err) {
+        console.error(err);
         e.target.value = ''; // Reset input
       }
     }
@@ -384,6 +379,7 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
     } catch (error) {
       console.error("Error creating project:", error);
       alert("建立專案失敗，請稍後再試");
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -420,7 +416,7 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
                     </button>
                 </div>
                 <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm pointer-events-none">
-                   建議比例 16:9 | 限 1MB
+                   上限 10MB
                 </div>
              </div>
           </div>
@@ -607,7 +603,39 @@ const ProjectDashboard: React.FC<{ projects: DesignProject[]; onSelectProject: (
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col"><h3 className="font-bold text-slate-800 mb-6">階段分佈</h3><div className="flex-1 min-h-[250px]"><ResponsiveContainer><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">{pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div></div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col"><h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><Clock className="w-5 h-5 text-amber-500" />即將完工 (30天內)</h3><div className="flex-1 overflow-auto"><table className="w-full text-sm text-left"><thead className="text-xs text-slate-500 uppercase bg-slate-50 rounded-lg"><tr><th className="px-4 py-3">案名</th><th className="px-4 py-3">負責人</th><th className="px-4 py-3">階段</th><th className="px-4 py-3">完工日</th></tr></thead><tbody>{upcomingDeadlines.map(p => <tr key={p.id} onClick={() => onSelectProject(p)} className="hover:bg-slate-50 cursor-pointer transition-colors"><td className="px-4 py-3 font-bold">{p.projectName}</td><td className="px-4 py-3">{p.assignedEmployee}</td><td className="px-4 py-3"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{p.currentStage}</span></td><td className="px-4 py-3 font-mono text-slate-600 font-medium">{p.estimatedCompletionDate}</td></tr>)}</tbody></table></div></div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col"><h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><Clock className="w-5 h-5 text-amber-500" />即將完工 (30天內)</h3><div className="flex-1 overflow-auto">
+          {/* Desktop View */}
+          <table className="w-full text-sm text-left hidden md:table"><thead className="text-xs text-slate-500 uppercase bg-slate-50 rounded-lg"><tr><th className="px-4 py-3">案名</th><th className="px-4 py-3">負責人</th><th className="px-4 py-3">階段</th><th className="px-4 py-3">完工日</th></tr></thead>
+            <tbody>
+              {upcomingDeadlines.length === 0 ? <tr><td colSpan={4} className="text-center py-8 text-slate-400">目前無即將完工案場</td></tr> : 
+                upcomingDeadlines.map(p => (
+                  <tr key={p.id} onClick={() => onSelectProject(p)} className="hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50">
+                    <td className="px-4 py-3 font-bold text-slate-900">{p.projectName}</td>
+                    <td className="px-4 py-3 text-slate-900">{p.assignedEmployee}</td>
+                    <td className="px-4 py-3"><span className="bg-slate-100 text-slate-800 px-2 py-1 rounded text-xs font-bold">{p.currentStage}</span></td>
+                    <td className="px-4 py-3 font-mono text-slate-900 font-bold">{p.estimatedCompletionDate}</td>
+                  </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* Mobile View */}
+          <div className="md:hidden space-y-3">
+             {upcomingDeadlines.length === 0 ? <p className="text-center py-8 text-slate-400">目前無即將完工案場</p> : 
+               upcomingDeadlines.map(p => (
+                 <div key={p.id} onClick={() => onSelectProject(p)} className="p-4 rounded-xl bg-slate-50 active:bg-slate-100">
+                    <div className="flex justify-between items-start mb-2">
+                       <span className="font-bold text-slate-900">{p.projectName}</span>
+                       <span className="text-[10px] font-bold bg-white border border-slate-200 px-2 py-0.5 rounded">{p.currentStage}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-600">
+                       <span>{p.assignedEmployee}</span>
+                       <span className="font-bold text-red-600">完工: {p.estimatedCompletionDate}</span>
+                    </div>
+                 </div>
+               ))
+             }
+          </div>
+        </div></div>
       </div>
     </div>
   );
@@ -690,10 +718,14 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
             // Auto save the image update
             onUpdateProject({ ...formData, imageUrl: url, lastUpdatedTimestamp: Date.now() });
             alert("封面更新成功！");
+         } else {
+             // Reset the file input if validation failed (false resolved)
+             e.target.value = '';
          }
        } catch (err) {
          console.error(err);
          // Error handled in utility
+         e.target.value = '';
        } finally {
          setIsUploading(false);
        }
@@ -801,7 +833,6 @@ const App: React.FC = () => {
     const unsubUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       const fetchedUsers = snapshot.docs.map(doc => doc.data() as User);
       if (fetchedUsers.length === 0) {
-        // Init default users if DB empty
         INITIAL_USERS.forEach(async (u) => {
           await setDoc(doc(db, "users", u.id), u);
         });
