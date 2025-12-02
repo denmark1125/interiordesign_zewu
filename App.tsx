@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import Layout from './components/Layout';
 import ProjectDashboard from './components/SiteDashboard';
@@ -6,14 +7,17 @@ import LoginScreen from './components/LoginScreen';
 import NewProjectModal from './components/NewProjectModal';
 import TeamManagement from './components/TeamManagement';
 import { DesignProject, User, ProjectStage } from './types';
-import { INITIAL_USERS } from './constants'; // 只在第一次初始化資料庫時使用
-import { Plus, Loader2, Filter, XCircle } from 'lucide-react';
+import { INITIAL_USERS } from './constants';
+import { Plus, Loader2, ArrowLeft } from 'lucide-react';
 import { db, usersCollection, projectsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy } from './services/firebase';
+
+// Filter Type Definition
+export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
 const App: React.FC = () => {
   // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Loading state for initial data fetch
+  const [isLoading, setIsLoading] = useState(true);
 
   // Data State (Managed by Firebase)
   const [users, setUsers] = useState<User[]>([]);
@@ -25,7 +29,6 @@ const App: React.FC = () => {
     const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       const fetchedUsers = snapshot.docs.map(doc => doc.data() as User);
       
-      // Initial Seed: If database is empty, add default users
       if (fetchedUsers.length === 0) {
         INITIAL_USERS.forEach(async (u) => {
           await setDoc(doc(db, "users", u.id), u);
@@ -42,7 +45,6 @@ const App: React.FC = () => {
       setIsLoading(false);
     });
 
-    // Cleanup listeners on unmount
     return () => {
       unsubscribeUsers();
       unsubscribeProjects();
@@ -57,13 +59,12 @@ const App: React.FC = () => {
 
   // View State
   const [view, setView] = useState<'dashboard' | 'projects' | 'detail' | 'team'>('dashboard');
-  const [lastView, setLastView] = useState<'dashboard' | 'projects' | 'team'>('dashboard'); // 用於「返回」功能的記憶
+  const [previousView, setPreviousView] = useState<'dashboard' | 'projects'>('dashboard'); // Memory for "Back" button
   const [selectedProject, setSelectedProject] = useState<DesignProject | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   
-  // Filter State (新功能：專案列表篩選)
-  // 'ALL' = 全部, 'DESIGN_GROUP' = 設計+接洽, 其他則是具體的 ProjectStage
-  const [projectFilter, setProjectFilter] = useState<string>('ALL');
+  // Filter State
+  const [projectFilter, setProjectFilter] = useState<ProjectFilterType>('ALL');
 
   // Auth Actions
   const handleLogin = (user: User) => {
@@ -82,7 +83,7 @@ const App: React.FC = () => {
     setProjectFilter('ALL');
   };
 
-  // User Management Actions (Firebase)
+  // User Management Actions
   const handleAddUser = async (newUser: User) => {
     try {
       await setDoc(doc(db, "users", newUser.id), newUser);
@@ -115,37 +116,40 @@ const App: React.FC = () => {
 
   // Project Actions
   const handleSelectProject = (project: DesignProject) => {
-    // 記錄點進詳情頁之前的視圖，以便返回
-    if (view !== 'detail') {
-      setLastView(view as 'dashboard' | 'projects' | 'team'); 
+    // Remember where we came from
+    if (view === 'dashboard' || view === 'projects') {
+      setPreviousView(view);
     }
     setSelectedProject(project);
     setView('detail');
   };
 
+  // New: Handle Filter Click from Dashboard
+  const handleDashboardFilterClick = (filterType: ProjectFilterType) => {
+    setProjectFilter(filterType);
+    setPreviousView('dashboard'); // If we go back from list, go to dashboard
+    setView('projects');
+  };
+
   const handleBack = () => {
     setSelectedProject(null);
-    setView(lastView); // 回到上一頁
+    // Go back to the remembered previous view
+    setView(previousView);
   };
 
   const handleTabChange = (tab: 'dashboard' | 'projects' | 'team') => {
     setView(tab);
     if (tab === 'projects') {
-      setProjectFilter('ALL'); // 手動切換到列表時，預設顯示全部
+        // Reset filter when manually clicking "All Projects" tab
+        setProjectFilter('ALL');
     }
     if (tab === 'dashboard' || tab === 'team') setSelectedProject(null);
-  };
-
-  // 儀表板卡片點擊處理
-  const handleDashboardCardClick = (type: 'ALL' | 'CONSTRUCTION' | 'DESIGN_GROUP' | 'URGENT') => {
-    setProjectFilter(type);
-    setView('projects');
   };
 
   const handleUpdateProject = async (updatedProject: DesignProject) => {
     try {
       await setDoc(doc(db, "projects", updatedProject.id), updatedProject);
-      setSelectedProject(updatedProject); 
+      setSelectedProject(updatedProject);
     } catch (e) {
       console.error("Error updating project: ", e);
       alert("更新專案失敗，請檢查網路");
@@ -156,7 +160,7 @@ const App: React.FC = () => {
     try {
       await deleteDoc(doc(db, "projects", projectId));
       setSelectedProject(null);
-      setView(lastView); // 刪除後回到上一頁
+      setView(previousView);
     } catch (e) {
       console.error("Error deleting project: ", e);
       alert("刪除專案失敗");
@@ -167,29 +171,19 @@ const App: React.FC = () => {
     try {
       await setDoc(doc(db, "projects", newProject.id), newProject);
       setShowNewProjectModal(false);
-      
-      // 新增後直接進入詳情，並設定返回頁面為列表
-      setLastView('projects');
-      setProjectFilter('ALL');
-      setSelectedProject(newProject);
-      setView('detail');
+      handleSelectProject(newProject);
     } catch (e) {
       console.error("Error creating project: ", e);
       alert("建立專案失敗");
     }
   };
 
-  // Data Export Logic (CSV)
   const handleExportData = () => {
     if (projects.length === 0) {
         alert("目前無資料可匯出");
         return;
     }
-
-    const headers = [
-        '案名', '客戶姓名', '負責人', '目前階段', '預計完工日', '地址', '電話', '最新進度', '客戶需求', '內部備註'
-    ];
-
+    const headers = ['案名', '客戶姓名', '負責人', '目前階段', '預計完工日', '地址', '電話', '最新進度', '客戶需求', '內部備註'];
     const rows = projects.map(p => [
         p.projectName,
         p.clientName,
@@ -198,16 +192,11 @@ const App: React.FC = () => {
         p.estimatedCompletionDate,
         p.address,
         p.contactPhone,
-        `"${(p.latestProgressNotes || '').replace(/"/g, '""')}"`, 
+        `"${(p.latestProgressNotes || '').replace(/"/g, '""')}"`,
         `"${(p.clientRequests || '').replace(/"/g, '""')}"`,
         `"${(p.internalNotes || '').replace(/"/g, '""')}"`
     ]);
-
-    const csvContent = [
-        headers.join(','),
-        ...rows.map(r => r.join(','))
-    ].join('\n');
-
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -232,36 +221,42 @@ const App: React.FC = () => {
     return <LoginScreen onLogin={handleLogin} users={users} />;
   }
 
-  // 權限檢查與資料過濾
-  const baseProjects = (currentUser.role === 'manager' || currentUser.role === 'engineer')
+  // --- Filter Logic ---
+  let displayProjects = (currentUser.role === 'manager' || currentUser.role === 'engineer')
     ? projects
     : projects.filter(p => p.assignedEmployee === currentUser.name);
+
+  // Apply Dashboard Filter
+  if (projectFilter === 'CONSTRUCTION') {
+    displayProjects = displayProjects.filter(p => p.currentStage === ProjectStage.CONSTRUCTION);
+  } else if (projectFilter === 'DESIGN_CONTACT') {
+    displayProjects = displayProjects.filter(p => p.currentStage === ProjectStage.DESIGN || p.currentStage === ProjectStage.CONTACT);
+  } else if (projectFilter === 'UPCOMING') {
+     const today = new Date();
+     const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+     displayProjects = displayProjects.filter(p => {
+        if (p.currentStage === ProjectStage.COMPLETED) return false;
+        const date = new Date(p.estimatedCompletionDate);
+        return date >= today && date <= thirtyDaysLater;
+     });
+  }
 
   const canViewDashboard = currentUser.role === 'manager' || currentUser.role === 'engineer' || currentUser.canViewDashboard;
   const canManageTeam = currentUser.role === 'manager' || currentUser.role === 'engineer';
 
-  // 根據 projectFilter 篩選顯示的專案
-  const displayProjects = baseProjects.filter(p => {
-    if (projectFilter === 'ALL') return true;
-    if (projectFilter === 'URGENT') return true; // URGENT is handled by view transition, but we can show all here or filter further if needed
-    if (projectFilter === 'DESIGN_GROUP') return p.currentStage === ProjectStage.DESIGN || p.currentStage === ProjectStage.CONTACT;
-    if (projectFilter === 'CONSTRUCTION') return p.currentStage === ProjectStage.CONSTRUCTION;
-    return true;
-  });
-
-  // 篩選標題顯示
-  const getFilterTitle = () => {
-    switch (projectFilter) {
-      case 'CONSTRUCTION': return '施工中案場';
-      case 'DESIGN_GROUP': return '設計與接洽中案場';
-      case 'URGENT': return '所有案場 (包含即將完工)';
-      default: return (currentUser.role === 'manager' || currentUser.role === 'engineer') ? '所有專案列表' : '我的負責案場';
-    }
+  // Helper for filter display name
+  const getFilterName = () => {
+      switch(projectFilter) {
+          case 'CONSTRUCTION': return '施工中案件';
+          case 'DESIGN_CONTACT': return '設計/接洽中案件';
+          case 'UPCOMING': return '即將完工案件';
+          default: return '所有專案列表';
+      }
   };
 
   return (
     <Layout 
-      activeTab={view === 'detail' ? lastView : view as 'dashboard' | 'projects' | 'team'} 
+      activeTab={view === 'detail' ? 'projects' : view as 'dashboard' | 'projects' | 'team'} 
       onTabChange={handleTabChange}
       currentUser={currentUser}
       onLogout={handleLogout}
@@ -272,7 +267,7 @@ const App: React.FC = () => {
           projects={projects} 
           onSelectProject={handleSelectProject} 
           employeeNames={employeeNames}
-          onCardClick={handleDashboardCardClick}
+          onFilterClick={handleDashboardFilterClick}
         />
       )}
 
@@ -288,52 +283,56 @@ const App: React.FC = () => {
       
       {view === 'projects' && (
         <div className="space-y-6 animate-fade-in">
+          {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-            <div className="flex items-center gap-3">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                  {getFilterTitle()}
-                </h2>
-                <p className="text-slate-500 text-sm mt-1">
-                  共 {displayProjects.length} 個案場
-                </p>
-              </div>
-              {projectFilter !== 'ALL' && (
-                <button 
-                  onClick={() => setProjectFilter('ALL')}
-                  className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-xs font-bold transition-colors"
-                >
-                  <XCircle className="w-4 h-4" /> 清除篩選
-                </button>
-              )}
+            <div>
+               <div className="flex items-center gap-2">
+                 {/* Show Back button if filtered from Dashboard */}
+                 {projectFilter !== 'ALL' && (
+                    <button onClick={() => setView('dashboard')} className="p-1 hover:bg-slate-100 rounded-full mr-1 text-slate-400">
+                        <ArrowLeft className="w-5 h-5" />
+                    </button>
+                 )}
+                 <h2 className="text-2xl font-bold text-slate-800">
+                    {(currentUser.role === 'manager' || currentUser.role === 'engineer') 
+                        ? getFilterName() 
+                        : '我的負責案場'
+                    }
+                 </h2>
+               </div>
+              <p className="text-slate-500 text-sm mt-1 ml-1">
+                共 {displayProjects.length} 個案場
+              </p>
             </div>
             
-            <button 
-              onClick={() => setShowNewProjectModal(true)}
-              className="w-full md:w-auto bg-accent hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 font-medium"
-            >
-              <Plus className="w-5 h-5" />
-              新增案場
-            </button>
+            <div className="flex gap-2 w-full md:w-auto">
+                {projectFilter !== 'ALL' && (
+                    <button 
+                        onClick={() => setProjectFilter('ALL')}
+                        className="w-full md:w-auto px-4 py-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium text-sm transition-colors"
+                    >
+                        清除篩選
+                    </button>
+                )}
+                <button 
+                onClick={() => setShowNewProjectModal(true)}
+                className="w-full md:w-auto bg-accent hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 font-medium"
+                >
+                <Plus className="w-5 h-5" />
+                新增案場
+                </button>
+            </div>
           </div>
 
           {displayProjects.length === 0 ? (
             <div className="text-center py-20 bg-white rounded-xl border-2 border-dashed border-slate-200">
-              <p className="text-slate-400 mb-4 text-lg">此分類下目前沒有案場資料</p>
+              <p className="text-slate-400 mb-4 text-lg">目前沒有符合條件的案場</p>
               {projectFilter === 'ALL' && (
                 <button 
-                  onClick={() => setShowNewProjectModal(true)}
-                  className="text-accent hover:underline font-medium"
+                    onClick={() => setShowNewProjectModal(true)}
+                    className="text-accent hover:underline font-medium"
                 >
-                  立即建立第一個案場
-                </button>
-              )}
-               {projectFilter !== 'ALL' && (
-                <button 
-                  onClick={() => setProjectFilter('ALL')}
-                  className="text-accent hover:underline font-medium"
-                >
-                  查看所有案場
+                    立即建立第一個案場
                 </button>
               )}
             </div>

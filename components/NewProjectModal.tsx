@@ -1,6 +1,9 @@
+
 import React, { useState } from 'react';
 import { DesignProject, ProjectStage, User } from '../types';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Loader2 } from 'lucide-react';
+import { setDoc, doc } from '../services/firebase';
+import { db } from '../services/firebase';
 
 interface NewProjectModalProps {
   currentUser: User;
@@ -10,8 +13,7 @@ interface NewProjectModalProps {
 }
 
 const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose, onSubmit, employeeNames }) => {
-  // Default placeholder image
-  const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1600607686527-6fb886090705?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80';
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState<Partial<DesignProject>>({
     projectName: '',
@@ -24,7 +26,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
     internalNotes: '',
     address: '',
     contactPhone: '',
-    imageUrl: DEFAULT_IMAGE,
+    // Default image
+    imageUrl: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80', 
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,6 +36,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
       alert('請填寫專案名稱與客戶姓名');
       return;
     }
+
+    setIsSubmitting(true);
 
     try {
       const projectId = `P${Date.now().toString().slice(-4)}`;
@@ -50,7 +55,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
         lastUpdatedTimestamp: Date.now(),
         address: formData.address || '',
         contactPhone: formData.contactPhone || '',
-        imageUrl: DEFAULT_IMAGE, // Always use default
+        imageUrl: formData.imageUrl!,
         history: [
           {
             id: `h-${Date.now()}`,
@@ -67,6 +72,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
     } catch (error) {
       console.error("Error creating project:", error);
       alert("建立專案失敗");
+      setIsSubmitting(false);
     }
   };
 
@@ -114,6 +120,29 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
               </div>
 
               <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">地址/地點</label>
+                <input
+                  type="text"
+                  placeholder="案場地址"
+                  className="w-full border-slate-300 rounded-lg p-2.5 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
+                  value={formData.address}
+                  onChange={e => setFormData({...formData, address: e.target.value})}
+                />
+              </div>
+               <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">預計完工日</label>
+                <input
+                  type="date"
+                  className="w-full border-slate-300 rounded-lg p-2.5 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
+                  value={formData.estimatedCompletionDate}
+                  onChange={e => setFormData({...formData, estimatedCompletionDate: e.target.value})}
+                />
+              </div>
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-4">
+              <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">負責員工</label>
                 {currentUser.role === 'manager' || currentUser.role === 'engineer' ? (
                    <select
@@ -134,10 +163,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
                   />
                 )}
               </div>
-            </div>
 
-            {/* Right Column */}
-            <div className="space-y-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">目前階段</label>
                 <select
@@ -151,31 +177,20 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">預計完工日</label>
-                <input
-                  type="date"
+               <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">最新進度描述</label>
+                <textarea
+                  rows={4}
                   className="w-full border-slate-300 rounded-lg p-2.5 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
-                  value={formData.estimatedCompletionDate}
-                  onChange={e => setFormData({...formData, estimatedCompletionDate: e.target.value})}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">地址/地點</label>
-                <input
-                  type="text"
-                  placeholder="案場地址"
-                  className="w-full border-slate-300 rounded-lg p-2.5 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
-                  value={formData.address}
-                  onChange={e => setFormData({...formData, address: e.target.value})}
+                  value={formData.latestProgressNotes}
+                  onChange={e => setFormData({...formData, latestProgressNotes: e.target.value})}
                 />
               </div>
             </div>
           </div>
 
           <div className="border-t border-slate-100 pt-4 space-y-4">
-            <div>
+             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">客戶需求 (Client Requests)</label>
               <textarea
                 rows={2}
@@ -185,31 +200,30 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
                 onChange={e => setFormData({...formData, clientRequests: e.target.value})}
               />
             </div>
-            
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">最新進度描述 (Initial Progress)</label>
-              <textarea
-                rows={2}
-                className="w-full border-slate-300 rounded-lg p-2.5 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
-                value={formData.latestProgressNotes}
-                onChange={e => setFormData({...formData, latestProgressNotes: e.target.value})}
-              />
-            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 font-medium transition-colors"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 font-medium transition-colors disabled:opacity-50"
             >
               取消
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-amber-700 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 flex items-center gap-2"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-amber-700 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              建立案場
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  建立中...
+                </>
+              ) : (
+                '建立案場'
+              )}
             </button>
           </div>
         </form>

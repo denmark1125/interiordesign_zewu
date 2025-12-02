@@ -1,17 +1,18 @@
 
 import React, { useState } from 'react';
 import { DesignProject, ProjectStage } from '../types';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis } from 'recharts';
-import { AlertTriangle, CheckCircle, Clock, Briefcase, Filter, ChevronRight, ArrowRight } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { AlertTriangle, CheckCircle, Clock, Briefcase, Filter, ChevronRight } from 'lucide-react';
+import { ProjectFilterType } from '../App';
 
 interface DashboardProps {
   projects: DesignProject[];
   onSelectProject: (project: DesignProject) => void;
   employeeNames: string[];
-  onCardClick: (type: 'ALL' | 'CONSTRUCTION' | 'DESIGN_GROUP' | 'URGENT') => void;
+  onFilterClick: (filter: ProjectFilterType) => void;
 }
 
-const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject, employeeNames, onCardClick }) => {
+const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject, employeeNames, onFilterClick }) => {
   const [selectedEmployee, setSelectedEmployee] = useState<string>('All');
 
   const filteredProjects = selectedEmployee === 'All' 
@@ -41,42 +42,10 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
   }).sort((a, b) => new Date(a.estimatedCompletionDate).getTime() - new Date(b.estimatedCompletionDate).getTime());
 
   const stats = [
-    { 
-      id: 'ALL',
-      label: '負責案場總數', 
-      value: filteredProjects.length, 
-      icon: Briefcase, 
-      color: 'bg-slate-100 text-slate-600', 
-      ring: 'ring-slate-50',
-      actionType: 'ALL' as const
-    },
-    { 
-      id: 'CONSTRUCTION',
-      label: '施工中案場', 
-      value: stageCounts[ProjectStage.CONSTRUCTION] || 0, 
-      icon: AlertTriangle, 
-      color: 'bg-amber-100 text-amber-600', 
-      ring: 'ring-amber-50',
-      actionType: 'CONSTRUCTION' as const
-    },
-    { 
-      id: 'DESIGN',
-      label: '設計/接洽中', 
-      value: (stageCounts[ProjectStage.DESIGN] || 0) + (stageCounts[ProjectStage.CONTACT] || 0), 
-      icon: Clock, 
-      color: 'bg-blue-100 text-blue-600', 
-      ring: 'ring-blue-50',
-      actionType: 'DESIGN_GROUP' as const
-    },
-    { 
-      id: 'URGENT',
-      label: '即將完工 (30天內)', 
-      value: upcomingDeadlines.length, 
-      icon: CheckCircle, 
-      color: 'bg-purple-100 text-purple-600', 
-      ring: 'ring-purple-50',
-      actionType: 'URGENT' as const
-    },
+    { label: '負責案場總數', value: filteredProjects.length, icon: Briefcase, color: 'bg-slate-100 text-slate-600', ring: 'ring-slate-50', filterType: 'ALL' as ProjectFilterType },
+    { label: '施工中案場', value: stageCounts[ProjectStage.CONSTRUCTION] || 0, icon: AlertTriangle, color: 'bg-amber-100 text-amber-600', ring: 'ring-amber-50', filterType: 'CONSTRUCTION' as ProjectFilterType },
+    { label: '設計/接洽中', value: (stageCounts[ProjectStage.DESIGN] || 0) + (stageCounts[ProjectStage.CONTACT] || 0), icon: Clock, color: 'bg-blue-100 text-blue-600', ring: 'ring-blue-50', filterType: 'DESIGN_CONTACT' as ProjectFilterType },
+    { label: '即將完工 (30天內)', value: upcomingDeadlines.length, icon: CheckCircle, color: 'bg-purple-100 text-purple-600', ring: 'ring-purple-50', filterType: 'UPCOMING' as ProjectFilterType },
   ];
 
   return (
@@ -92,7 +61,7 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
         <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm w-full md:w-auto">
           <Filter className="w-4 h-4 text-slate-400 ml-2" />
           <select 
-            className="bg-transparent border-none text-sm font-bold focus:ring-0 text-slate-700 w-full md:w-auto outline-none"
+            className="bg-transparent border-none text-sm font-bold focus:ring-0 text-slate-700 w-full md:w-auto"
             value={selectedEmployee}
             onChange={(e) => setSelectedEmployee(e.target.value)}
           >
@@ -105,20 +74,20 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => (
+        {stats.map((stat, idx) => (
           <button 
-            key={stat.id} 
-            onClick={() => onCardClick(stat.actionType)}
-            className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md hover:scale-[1.02] transition-all text-left group cursor-pointer"
+            key={idx} 
+            onClick={() => onFilterClick(stat.filterType)}
+            className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition-all hover:scale-[1.02] text-left group"
           >
             <div className={`p-3 rounded-xl w-fit ${stat.color} mb-3 group-hover:scale-110 transition-transform`}>
               <stat.icon className="w-6 h-6" />
             </div>
-            <div className="w-full">
+            <div>
               <p className="text-3xl font-bold text-slate-800 tracking-tight">{stat.value}</p>
               <div className="flex justify-between items-center mt-1">
                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">{stat.label}</p>
-                 <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors opacity-0 group-hover:opacity-100" />
+                 <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
               </div>
             </div>
           </button>
