@@ -656,9 +656,10 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
     }
 
     if (formData.assignedEmployee !== project.assignedEmployee) {
-       newLogs.push({ id: `h-${Date.now()}-4`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name, action: '變更負責人', details: `負責人從 ${project.assignedEmployee} 變更為 ${formData.assignedEmployee}`, field: 'assignedEmployee', oldValue: project.assignedEmployee, newValue: formData.assignedEmployee });
+      // Changed to just save data, DO NOT log to history based on request
       hasChanges = true;
     }
+
     const fieldsToCheck: (keyof DesignProject)[] = ['internalNotes', 'address', 'estimatedCompletionDate', 'contactPhone'];
     fieldsToCheck.forEach(field => { if (formData[field] !== project[field]) hasChanges = true; });
 
