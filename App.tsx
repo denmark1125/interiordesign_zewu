@@ -115,8 +115,8 @@ const App: React.FC = () => {
 
   // Project Actions
   const handleSelectProject = (project: DesignProject) => {
+    // 記錄點進詳情頁之前的視圖，以便返回
     if (view !== 'detail') {
-      // 這裡做一個類型斷言，因為 view 不等於 'detail' 時，它必然是 lastView 允許的類型
       setLastView(view as 'dashboard' | 'projects' | 'team'); 
     }
     setSelectedProject(project);
@@ -125,7 +125,7 @@ const App: React.FC = () => {
 
   const handleBack = () => {
     setSelectedProject(null);
-    setView(lastView); // 回到上一頁 (若是從儀表板點進來，就回儀表板；從列表點進來，就回列表)
+    setView(lastView); // 回到上一頁
   };
 
   const handleTabChange = (tab: 'dashboard' | 'projects' | 'team') => {
@@ -242,7 +242,8 @@ const App: React.FC = () => {
 
   // 根據 projectFilter 篩選顯示的專案
   const displayProjects = baseProjects.filter(p => {
-    if (projectFilter === 'ALL' || projectFilter === 'URGENT') return true; // URGENT 只是跳轉，這邊先顯示全部，UI 上會另外標示或排序
+    if (projectFilter === 'ALL') return true;
+    if (projectFilter === 'URGENT') return true; // URGENT is handled by view transition, but we can show all here or filter further if needed
     if (projectFilter === 'DESIGN_GROUP') return p.currentStage === ProjectStage.DESIGN || p.currentStage === ProjectStage.CONTACT;
     if (projectFilter === 'CONSTRUCTION') return p.currentStage === ProjectStage.CONSTRUCTION;
     return true;
