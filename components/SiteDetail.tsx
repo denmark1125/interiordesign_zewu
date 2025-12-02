@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DesignProject, ProjectStage, HistoryLog, User } from '../types';
-import { CONSTRUCTION_PHASES } from '../constants';
+import { CONSTRUCTION_PHASES, validateImageFile } from '../constants';
 import { generateProjectReport, analyzeDesignIssue } from '../services/geminiService';
-import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Camera, Upload } from 'lucide-react';
+import { storage, ref, uploadBytes, getDownloadURL } from '../services/firebase';
 
 interface ProjectDetailProps {
   project: DesignProject;
@@ -27,12 +28,52 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<{analysis: string, suggestions: string[]} | null>(null);
 
+  // Image Upload State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
   useEffect(() => {
     setFormData(project);
   }, [project]);
 
   const handleInputChange = (field: keyof DesignProject, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      
+      // Validate Image
+      const isValid = await validateImageFile(file);
+      if (!isValid) {
+        if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
+        return;
+      }
+
+      setIsUploadingImage(true);
+
+      try {
+        const storageRef = ref(storage, `project-images/${project.id}/${file.name}`);
+        await uploadBytes(storageRef, file);
+        const newImageUrl = await getDownloadURL(storageRef);
+
+        const updatedProject = {
+          ...formData,
+          imageUrl: newImageUrl,
+          lastUpdatedTimestamp: Date.now()
+        };
+        
+        setFormData(updatedProject);
+        onUpdateProject(updatedProject);
+        alert("專案封面已更新！");
+      } catch (error) {
+        console.error("Upload failed", error);
+        alert("圖片上傳失敗，請重試");
+      } finally {
+        setIsUploadingImage(false);
+      }
+    }
   };
 
   const handleAddProgress = () => {
@@ -151,33 +192,77 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
   const sortedHistory = [...(formData.history || [])].sort((a, b) => b.timestamp - a.timestamp);
   const canDelete = currentUser.role === 'manager' || currentUser.role === 'engineer';
 
-  // Common input style class
+  // Common input style class - Force white background and dark text
   const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-3 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 focus:border-accent outline-none transition-all placeholder:text-slate-400";
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-slide-up">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
-        <div className="flex items-start gap-3">
-          <button onClick={onBack} className="mt-1 p-2 bg-white hover:bg-slate-100 rounded-full border border-slate-200 transition-colors shadow-sm">
-            <ArrowLeft className="w-5 h-5 text-slate-600" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800 leading-tight">{project.projectName}</h1>
-            <div className="flex flex-wrap items-center gap-2 text-slate-500 text-sm mt-1">
-              <span className="font-medium">{project.clientName}</span>
-              <span className="text-slate-300 hidden sm:inline">|</span>
-              <div className="flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span>{project.address}</span>
-              </div>
-            </div>
-          </div>
+      {/* Header Image Area */}
+      <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-md group">
+        <img 
+          src={formData.imageUrl} 
+          alt={formData.projectName} 
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+        
+        {/* Update Image Button */}
+        <div className="absolute top-4 right-4 z-10">
+           <button 
+             onClick={() => fileInputRef.current?.click()}
+             disabled={isUploadingImage}
+             className="bg-black/40 hover:bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all border border-white/20"
+           >
+             {isUploadingImage ? <Loader2 className="w-4 h-4 animate-spin"/> : <Camera className="w-4 h-4" />}
+             {isUploadingImage ? '上傳中...' : '更換渲染圖'}
+           </button>
+           <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleImageUpload} 
+              accept="image/*" 
+              className="hidden" 
+           />
         </div>
         
-        <button 
+        {/* Helper text for image specs (only visible on hover for better UI) */}
+        <div className="absolute top-14 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <span className="text-[10px] text-white/80 bg-black/40 px-2 py-1 rounded backdrop-blur-sm">限 1MB, 16:9</span>
+        </div>
+
+        <div className="absolute bottom-0 left-0 p-6 text-white w-full">
+           <div className="flex justify-between items-end">
+             <div>
+                <h1 className="text-2xl sm:text-3xl font-bold leading-tight shadow-sm text-white">{project.projectName}</h1>
+                <div className="flex flex-wrap items-center gap-2 text-slate-200 text-sm mt-2 font-medium">
+                  <span>{project.clientName}</span>
+                  <span className="hidden sm:inline">|</span>
+                  <div className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>{project.address}</span>
+                  </div>
+                </div>
+             </div>
+             {/* Stage Badge on Image */}
+             <div className={`px-3 py-1 rounded-lg text-sm font-bold backdrop-blur-md border border-white/20 shadow-lg ${
+                project.currentStage === ProjectStage.CONSTRUCTION ? 'bg-amber-500/90 text-white' :
+                project.currentStage === ProjectStage.DESIGN ? 'bg-blue-500/90 text-white' :
+                'bg-white/20 text-white'
+             }`}>
+               {project.currentStage}
+             </div>
+           </div>
+        </div>
+      </div>
+
+      {/* Action Bar */}
+      <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+         <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 font-bold flex items-center gap-2 text-sm transition-colors">
+            <ArrowLeft className="w-4 h-4" /> 返回列表
+         </button>
+         <button 
           onClick={handleSaveGeneral}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20 font-bold transition-transform active:scale-95"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg flex items-center gap-2 shadow-sm font-bold transition-all active:scale-95 text-sm"
         >
           <Save className="w-4 h-4" /> 儲存變更
         </button>
@@ -447,7 +532,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                       onChange={(e) => {
                          handleInputChange('assignedEmployee', e.target.value);
                       }}
-                      className="w-full text-sm bg-slate-50 border border-slate-300 rounded-lg text-slate-900 p-2.5 outline-none focus:ring-2 focus:ring-accent/50"
+                      className="w-full text-sm bg-white border border-slate-300 rounded-lg text-slate-900 p-2.5 outline-none focus:ring-2 focus:ring-accent/50"
                     >
                        {employeeNames.map(name => (
                           <option key={name} value={name}>{name}</option>

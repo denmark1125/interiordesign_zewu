@@ -1,6 +1,6 @@
-
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -14,11 +14,14 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Check if firebase app is already initialized to avoid errors in development environments
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 
 // Firestore Collection References
 export const usersCollection = collection(db, "users");
 export const projectsCollection = collection(db, "projects");
 
-export { setDoc, doc, deleteDoc, onSnapshot, query, orderBy, collection };
+export { setDoc, doc, deleteDoc, onSnapshot, query, orderBy, collection, updateDoc, ref, uploadBytes, getDownloadURL };
