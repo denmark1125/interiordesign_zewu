@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2 } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { GoogleGenAI, Type } from "@google/genai";
 
 // ==========================================
@@ -77,6 +77,15 @@ export const CONSTRUCTION_PHASES = [
   '驗收缺失改善', '完工交付', '其他事項'
 ];
 
+export const DEFAULT_PROJECT_COVERS = [
+  'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80'
+];
+
 // ==========================================
 // 2. FIREBASE SERVICE
 // ==========================================
@@ -98,8 +107,59 @@ const storage = getStorage(app);
 const usersCollection = collection(db, "users");
 const projectsCollection = collection(db, "projects");
 
+// --- UTILITIES ---
+
+const getRandomCover = () => {
+  return DEFAULT_PROJECT_COVERS[Math.floor(Math.random() * DEFAULT_PROJECT_COVERS.length)];
+};
+
+const validateImageFile = (file: File): Promise<boolean> => {
+  return new Promise((resolve, reject) => {
+    // 1. Check Size (1MB = 1,048,576 bytes)
+    if (file.size > 1024 * 1024) {
+      alert("圖片大小超過 1MB 限制，請壓縮後再上傳。");
+      reject(false);
+      return;
+    }
+
+    // 2. Check Aspect Ratio (Tolerance for 16:9)
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      const ratio = img.width / img.height;
+      const targetRatio = 16 / 9; // ~1.77
+      // Tolerance: Allow between 1.3 (4:3-ish) and 2.4 (Ultra-wide)
+      // Strict 16:9 is hard for users, so we just warn on extremes (like portrait)
+      if (ratio < 1.0) { // Vertical image
+         const proceed = window.confirm("偵測到您上傳的是「直式圖片」，建議使用 16:9 橫式圖片以獲得最佳瀏覽體驗。\n\n是否仍要繼續？");
+         if (!proceed) {
+           reject(false);
+           return;
+         }
+      }
+      resolve(true);
+    };
+    img.onerror = () => {
+      alert("無法讀取圖片檔案");
+      reject(false);
+    };
+  });
+};
+
+const uploadImageFile = async (file: File, projectId: string): Promise<string> => {
+  try {
+    // Use timestamp to prevent caching issues if same name
+    const storageRef = ref(storage, `project-covers/${projectId}/${Date.now()}_${file.name}`);
+    await uploadBytes(storageRef, file);
+    return await getDownloadURL(storageRef);
+  } catch (error) {
+    console.error("Upload failed", error);
+    throw new Error("圖片上傳失敗");
+  }
+};
+
 // ==========================================
-// 3. GEMINI SERVICE
+// 3. GEMINI SERVICE (Lazy Init)
 // ==========================================
 
 const generateProjectReport = async (project: DesignProject): Promise<string> => {
@@ -127,8 +187,10 @@ const generateProjectReport = async (project: DesignProject): Promise<string> =>
   語氣請專業、簡潔。`;
 
   try {
-    // Lazy initialize to prevent crash if env is missing on load
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) return "API Key 未設定，無法使用 AI 功能。";
+    
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -148,7 +210,10 @@ const analyzeDesignIssue = async (project: DesignProject, inputContent: string):
   `;
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) return { analysis: "API Key 未設定。", suggestions: [] };
+
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
@@ -203,37 +268,37 @@ const LoginScreen: React.FC<{ onLogin: (user: User) => void; users: User[] }> = 
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans">
       <div className="text-center mb-8">
         <div className="inline-flex items-center justify-center p-4 bg-slate-900 rounded-2xl mb-4 shadow-xl">
           <PenTool className="w-10 h-10 text-accent" />
         </div>
         <h1 className="text-3xl font-bold text-slate-800 tracking-tight">澤物專案管理</h1>
-        <p className="text-slate-500 mt-2">Interior Design Project Management</p>
+        <p className="text-slate-500 mt-2 font-medium">Interior Design Project Management</p>
       </div>
 
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 max-w-md w-full">
         <h2 className="text-xl font-bold text-slate-800 mb-6 text-center">員工登入</h2>
         <form onSubmit={handleLoginSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">帳號</label>
+            <label className="block text-sm font-bold text-slate-700 mb-1">帳號</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <UserIcon className="h-5 w-5 text-slate-400" />
               </div>
-              <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} className="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-lg focus:ring-accent focus:border-accent transition-colors bg-white text-slate-900" placeholder="請輸入員工帳號" />
+              <input type="text" required value={username} onChange={(e) => setUsername(e.target.value)} className="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-lg focus:ring-accent focus:border-accent transition-colors bg-white text-slate-900 font-medium" placeholder="請輸入員工帳號" />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">密碼</label>
+            <label className="block text-sm font-bold text-slate-700 mb-1">密碼</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-slate-400" />
               </div>
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-lg focus:ring-accent focus:border-accent transition-colors bg-white text-slate-900" placeholder="請輸入密碼" />
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-lg focus:ring-accent focus:border-accent transition-colors bg-white text-slate-900 font-medium" placeholder="請輸入密碼" />
             </div>
           </div>
-          {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center gap-2"><AlertCircle className="w-4 h-4" />{error}</div>}
+          {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-center gap-2 font-bold"><AlertCircle className="w-4 h-4" />{error}</div>}
           <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 px-4 rounded-lg transition-all transform active:scale-[0.98] flex items-center justify-center gap-2">登入系統 <ArrowRightIcon className="w-4 h-4" /></button>
         </form>
       </div>
@@ -244,6 +309,9 @@ const LoginScreen: React.FC<{ onLogin: (user: User) => void; users: User[] }> = 
 // --- NewProjectModal ---
 const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubmit: (project: DesignProject) => void; employeeNames: string[] }> = ({ currentUser, onClose, onSubmit, employeeNames }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>(getRandomCover());
+
   const [formData, setFormData] = useState<Partial<DesignProject>>({
     projectName: '',
     clientName: '',
@@ -255,8 +323,26 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
     internalNotes: '',
     address: '',
     contactPhone: '',
-    imageUrl: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80', 
   });
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      try {
+        await validateImageFile(file);
+        setImageFile(file);
+        setPreviewUrl(URL.createObjectURL(file));
+      } catch (err) {
+        // Validation failed, reset input
+        e.target.value = '';
+      }
+    }
+  };
+
+  const handleRandomCover = () => {
+    setPreviewUrl(getRandomCover());
+    setImageFile(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,6 +353,13 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
     setIsSubmitting(true);
     try {
       const projectId = `P${Date.now().toString().slice(-4)}`;
+      let finalImageUrl = previewUrl;
+
+      // Upload image if selected
+      if (imageFile) {
+        finalImageUrl = await uploadImageFile(imageFile, projectId);
+      }
+
       const newProject: DesignProject = {
         id: projectId,
         projectName: formData.projectName!,
@@ -280,7 +373,7 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
         lastUpdatedTimestamp: Date.now(),
         address: formData.address || '',
         contactPhone: formData.contactPhone || '',
-        imageUrl: formData.imageUrl!,
+        imageUrl: finalImageUrl,
         history: [{ id: `h-${Date.now()}`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name, action: '建立專案', details: '專案初始化完成' }]
       };
       onSubmit(newProject);
@@ -292,46 +385,68 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto font-sans">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><div className="bg-accent p-1.5 rounded-lg"><Plus className="w-5 h-5 text-white" /></div>新增案場</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Cover Image Selection */}
+          <div className="space-y-3">
+             <label className="block text-sm font-bold text-slate-700">封面照片</label>
+             <div className="relative h-48 rounded-xl overflow-hidden border border-slate-200 group bg-slate-100">
+                <img src={previewUrl} className="w-full h-full object-cover transition-opacity duration-300" alt="Cover Preview" />
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-4">
+                    <label className="cursor-pointer bg-white text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-lg">
+                       <Upload className="w-4 h-4" /> 上傳照片
+                       <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+                    </label>
+                    <button type="button" onClick={handleRandomCover} className="bg-white/90 text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-white transition-colors shadow-lg">
+                       <RefreshCw className="w-4 h-4" /> 隨機產生
+                    </button>
+                </div>
+                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm">
+                   建議比例 16:9 | 限 1MB
+                </div>
+             </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
-              <div><label className="block text-sm font-bold text-slate-700 mb-1">案名 *</label><input type="text" required className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.projectName} onChange={e => setFormData({...formData, projectName: e.target.value})} /></div>
-              <div><label className="block text-sm font-bold text-slate-700 mb-1">客戶姓名 *</label><input type="text" required className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} /></div>
-              <div><label className="block text-sm font-bold text-slate-700 mb-1">地址/地點</label><input type="text" className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} /></div>
-              <div><label className="block text-sm font-bold text-slate-700 mb-1">預計完工日</label><input type="date" className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.estimatedCompletionDate} onChange={e => setFormData({...formData, estimatedCompletionDate: e.target.value})} /></div>
+              <div><label className="block text-sm font-bold text-slate-700 mb-1">案名 *</label><input type="text" required className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.projectName} onChange={e => setFormData({...formData, projectName: e.target.value})} placeholder="例如：信義區張公館" /></div>
+              <div><label className="block text-sm font-bold text-slate-700 mb-1">客戶姓名 *</label><input type="text" required className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.clientName} onChange={e => setFormData({...formData, clientName: e.target.value})} /></div>
+              <div><label className="block text-sm font-bold text-slate-700 mb-1">地址/地點</label><input type="text" className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} /></div>
+              <div><label className="block text-sm font-bold text-slate-700 mb-1">預計完工日</label><input type="date" className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.estimatedCompletionDate} onChange={e => setFormData({...formData, estimatedCompletionDate: e.target.value})} /></div>
             </div>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">負責員工</label>
                 {currentUser.role === 'manager' || currentUser.role === 'engineer' ? (
-                   <select className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.assignedEmployee} onChange={e => setFormData({...formData, assignedEmployee: e.target.value})}>
+                   <select className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.assignedEmployee} onChange={e => setFormData({...formData, assignedEmployee: e.target.value})}>
                      {employeeNames.map(name => <option key={name} value={name}>{name}</option>)}
                    </select>
                 ) : <input type="text" disabled className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-100 text-slate-500" value={formData.assignedEmployee} />}
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">目前階段</label>
-                <select className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.currentStage} onChange={e => setFormData({...formData, currentStage: e.target.value as ProjectStage})}>
+                <select className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.currentStage} onChange={e => setFormData({...formData, currentStage: e.target.value as ProjectStage})}>
                   {Object.values(ProjectStage).map(stage => <option key={stage} value={stage}>{stage}</option>)}
                 </select>
               </div>
-               <div><label className="block text-sm font-bold text-slate-700 mb-1">最新進度描述</label><textarea rows={4} className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.latestProgressNotes} onChange={e => setFormData({...formData, latestProgressNotes: e.target.value})} /></div>
+               <div><label className="block text-sm font-bold text-slate-700 mb-1">最新進度描述</label><textarea rows={4} className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.latestProgressNotes} onChange={e => setFormData({...formData, latestProgressNotes: e.target.value})} /></div>
             </div>
           </div>
           <div className="border-t border-slate-100 pt-4 space-y-4">
-             <div><label className="block text-sm font-bold text-slate-700 mb-1">客戶需求</label><textarea rows={2} className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900" value={formData.clientRequests} onChange={e => setFormData({...formData, clientRequests: e.target.value})} /></div>
-          </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} disabled={isSubmitting} className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 font-medium">取消</button>
-            <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-amber-700 flex items-center gap-2">{isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />建立中...</> : '建立案場'}</button>
+             <div><label className="block text-sm font-bold text-slate-700 mb-1">客戶需求</label><textarea rows={2} className="w-full border-slate-300 rounded-lg p-2.5 bg-slate-50 text-slate-900 focus:ring-accent focus:border-accent" value={formData.clientRequests} onChange={e => setFormData({...formData, clientRequests: e.target.value})} /></div>
           </div>
         </form>
+        
+        <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 font-bold transition-colors">取消</button>
+            <button onClick={handleSubmit} disabled={isSubmitting} className="px-5 py-2.5 rounded-lg bg-accent text-white font-bold hover:bg-amber-700 flex items-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95">{isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />處理中...</> : '建立案場'}</button>
+        </div>
       </div>
     </div>
   );
@@ -379,10 +494,10 @@ const TeamManagement: React.FC<{ users: User[]; currentUser: User; onAddUser: (u
       default: return <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 w-fit uppercase tracking-wider"><UserIcon className="w-3 h-3" /> Designer</span>;
     }
   };
-  const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 focus:border-accent outline-none";
+  const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 focus:border-accent outline-none font-medium";
 
   return (
-    <div className="space-y-6 pb-20 animate-fade-in">
+    <div className="space-y-6 pb-20 animate-fade-in font-sans">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div><h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><UserCog className="w-6 h-6 text-slate-600" />團隊成員管理</h2></div>
         <button onClick={() => setIsAdding(true)} className="w-full sm:w-auto bg-accent hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 font-bold"><Plus className="w-4 h-4" />新增員工</button>
@@ -419,7 +534,6 @@ const TeamManagement: React.FC<{ users: User[]; currentUser: User; onAddUser: (u
           </tbody>
         </table>
       </div>
-      {/* Mobile View Omitted for brevity but logic matches */}
     </div>
   );
 };
@@ -443,18 +557,18 @@ const ProjectDashboard: React.FC<{ projects: DesignProject[]; onSelectProject: (
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2><p className="text-slate-500 text-sm">{selectedEmployee === 'All' ? '全公司案場' : `${selectedEmployee} 的案場`}</p></div><div className="flex items-center gap-2 bg-white p-2 rounded-xl border"><Filter className="w-4 h-4 text-slate-400" /><select className="bg-transparent font-bold text-slate-700" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}><option value="All">顯示全部員工</option>{employeeNames.map(emp => <option key={emp} value={emp}>{emp}</option>)}</select></div></div>
+    <div className="space-y-6 animate-fade-in font-sans">
+      <div className="flex flex-col md:flex-row justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2><p className="text-slate-500 text-sm font-medium">{selectedEmployee === 'All' ? '全公司案場' : `${selectedEmployee} 的案場`}</p></div><div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200"><Filter className="w-4 h-4 text-slate-400" /><select className="bg-transparent font-bold text-slate-700 outline-none" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}><option value="All">顯示全部員工</option>{employeeNames.map(emp => <option key={emp} value={emp}>{emp}</option>)}</select></div></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, idx) => (
           <button key={idx} onClick={() => onFilterClick(stat.filterType)} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col hover:scale-[1.02] transition-all text-left group">
-            <div className={`p-3 rounded-xl w-fit ${stat.color} mb-3`}><stat.icon className="w-6 h-6" /></div><div><p className="text-3xl font-bold text-slate-800">{stat.value}</p><div className="flex justify-between items-center mt-1"><p className="text-xs font-bold text-slate-500">{stat.label}</p><ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500" /></div></div>
+            <div className={`p-3 rounded-xl w-fit ${stat.color} mb-3`}><stat.icon className="w-6 h-6" /></div><div><p className="text-3xl font-bold text-slate-800 tracking-tight">{stat.value}</p><div className="flex justify-between items-center mt-1"><p className="text-xs font-bold text-slate-500 uppercase">{stat.label}</p><ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500" /></div></div>
           </button>
         ))}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border lg:col-span-1 flex flex-col"><h3 className="font-bold text-slate-800 mb-6">階段分佈</h3><div className="flex-1 min-h-[250px]"><ResponsiveContainer><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">{pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div></div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border lg:col-span-2 flex flex-col"><h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><Clock className="w-5 h-5 text-amber-500" />即將完工</h3><div className="flex-1 overflow-auto"><table className="w-full text-sm text-left"><thead className="text-xs text-slate-500 uppercase bg-slate-50"><tr><th className="px-4 py-3">案名</th><th className="px-4 py-3">負責人</th><th className="px-4 py-3">階段</th><th className="px-4 py-3">完工日</th></tr></thead><tbody>{upcomingDeadlines.map(p => <tr key={p.id} onClick={() => onSelectProject(p)} className="hover:bg-slate-50 cursor-pointer"><td className="px-4 py-3 font-bold">{p.projectName}</td><td className="px-4 py-3">{p.assignedEmployee}</td><td className="px-4 py-3"><span className="bg-slate-100 px-2 py-1 rounded text-xs">{p.currentStage}</span></td><td className="px-4 py-3 font-mono">{p.estimatedCompletionDate}</td></tr>)}</tbody></table></div></div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col"><h3 className="font-bold text-slate-800 mb-6">階段分佈</h3><div className="flex-1 min-h-[250px]"><ResponsiveContainer><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">{pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div></div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col"><h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><Clock className="w-5 h-5 text-amber-500" />即將完工 (30天內)</h3><div className="flex-1 overflow-auto"><table className="w-full text-sm text-left"><thead className="text-xs text-slate-500 uppercase bg-slate-50 rounded-lg"><tr><th className="px-4 py-3">案名</th><th className="px-4 py-3">負責人</th><th className="px-4 py-3">階段</th><th className="px-4 py-3">完工日</th></tr></thead><tbody>{upcomingDeadlines.map(p => <tr key={p.id} onClick={() => onSelectProject(p)} className="hover:bg-slate-50 cursor-pointer transition-colors"><td className="px-4 py-3 font-bold">{p.projectName}</td><td className="px-4 py-3">{p.assignedEmployee}</td><td className="px-4 py-3"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{p.currentStage}</span></td><td className="px-4 py-3 font-mono text-slate-600 font-medium">{p.estimatedCompletionDate}</td></tr>)}</tbody></table></div></div>
       </div>
     </div>
   );
@@ -471,6 +585,7 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
   const [issueInput, setIssueInput] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<{analysis: string, suggestions: string[]} | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => setFormData(project), [project]);
   const handleInputChange = (field: keyof DesignProject, value: any) => setFormData(prev => ({ ...prev, [field]: value }));
@@ -486,32 +601,66 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
   const handleDelete = () => { if (window.confirm('確定刪除？')) onDeleteProject(project.id); };
   const handleGenerateReport = async () => { setIsGeneratingReport(true); const report = await generateProjectReport(formData); setReportResult(report); setIsGeneratingReport(false); };
   const handleAnalyzeIssue = async () => { if (!issueInput.trim()) return; setIsAnalyzing(true); const res = await analyzeDesignIssue(formData, issueInput); setAnalysisResult(res); setIsAnalyzing(false); };
-  const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-3 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 outline-none";
+  
+  const handleUpdateCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+       const file = e.target.files[0];
+       try {
+         setIsUploading(true);
+         await validateImageFile(file);
+         const url = await uploadImageFile(file, project.id);
+         handleInputChange('imageUrl', url);
+         // Auto save the image update
+         onUpdateProject({ ...formData, imageUrl: url, lastUpdatedTimestamp: Date.now() });
+         alert("封面更新成功！");
+       } catch (err) {
+         console.error(err);
+       } finally {
+         setIsUploading(false);
+       }
+    }
+  };
+
+  const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-3 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 outline-none font-medium transition-shadow";
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-slide-up">
-      <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-md group"><img src={formData.imageUrl} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div><div className="absolute bottom-0 left-0 p-6 text-white"><h1 className="text-3xl font-bold">{project.projectName}</h1><p>{project.clientName} | {project.address}</p></div></div>
-      <div className="flex justify-between items-center bg-white p-3 rounded-xl border shadow-sm"><button onClick={onBack} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 rounded-lg text-slate-600 font-bold"><ArrowLeft className="w-4 h-4"/>返回</button><button onClick={handleSaveGeneral} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><Save className="w-4 h-4"/>儲存</button></div>
-      <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl w-fit"><button onClick={() => setActiveTab('details')} className={`px-4 py-2 rounded-lg font-bold ${activeTab === 'details' ? 'bg-white shadow' : 'text-slate-500'}`}>專案執行</button><button onClick={() => setActiveTab('ai')} className={`px-4 py-2 rounded-lg font-bold flex gap-2 ${activeTab === 'ai' ? 'bg-white text-purple-600 shadow' : 'text-slate-500'}`}><Sparkles className="w-4 h-4"/>AI 助理</button></div>
+    <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-slide-up font-sans">
+      <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-md group">
+        <img src={formData.imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+        <div className="absolute bottom-0 left-0 p-6 text-white w-full">
+            <h1 className="text-3xl font-bold leading-tight">{project.projectName}</h1>
+            <p className="font-medium text-slate-200">{project.clientName} | {project.address}</p>
+        </div>
+        <div className="absolute top-4 right-4">
+            <label className={`bg-white/90 backdrop-blur text-slate-800 p-2 rounded-lg cursor-pointer hover:bg-white transition-colors shadow-lg flex items-center gap-2 font-bold text-xs ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+               {isUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Camera className="w-4 h-4"/>}
+               更換封面
+               <input type="file" className="hidden" accept="image/*" onChange={handleUpdateCover} />
+            </label>
+        </div>
+      </div>
+      <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm"><button onClick={onBack} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 rounded-lg text-slate-600 font-bold transition-colors"><ArrowLeft className="w-4 h-4"/>返回</button><button onClick={handleSaveGeneral} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm hover:bg-emerald-700 transition-colors"><Save className="w-4 h-4"/>儲存</button></div>
+      <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200"><button onClick={() => setActiveTab('details')} className={`px-4 py-2 rounded-lg font-bold transition-all ${activeTab === 'details' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>專案執行</button><button onClick={() => setActiveTab('ai')} className={`px-4 py-2 rounded-lg font-bold flex gap-2 transition-all ${activeTab === 'ai' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500'}`}><Sparkles className="w-4 h-4"/>AI 助理</button></div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {activeTab === 'details' ? (
             <>
-              <div className="bg-white rounded-2xl shadow-sm border p-4 space-y-4"><h3 className="font-bold text-slate-800 flex gap-2"><PlusCircle className="w-5 h-5 text-accent"/>新增施工日誌</h3><div className="flex gap-4"><select value={progressCategory} onChange={e => setProgressCategory(e.target.value)} className="border rounded-lg p-2">{CONSTRUCTION_PHASES.map(p => <option key={p} value={p}>{p}</option>)}</select><input value={progressDescription} onChange={e => setProgressDescription(e.target.value)} placeholder="進度說明..." className="flex-1 border rounded-lg p-2" /><button onClick={handleAddProgress} className="bg-accent text-white px-4 rounded-lg"><Send className="w-4 h-4"/></button></div></div>
-              <div className="bg-white rounded-2xl shadow-sm border p-6"><h3 className="font-bold mb-4 flex gap-2"><History className="w-5 h-5 text-slate-400"/>時間軸</h3><div className="space-y-4 pl-4 border-l-2 border-slate-100">{(formData.history || []).sort((a,b) => b.timestamp - a.timestamp).map(log => <div key={log.id} className="relative pl-4"><div className="text-xs text-slate-400">{new Date(log.timestamp).toLocaleString()} - {log.userName}</div><p className="font-bold text-slate-800">{log.action}</p><p className="text-slate-600">{log.details}</p></div>)}</div></div>
-              <div className="bg-white rounded-2xl shadow-sm border p-6 space-y-4"><h3 className="font-bold flex gap-2"><FileText className="w-5 h-5"/>基本資料</h3><div className="grid grid-cols-2 gap-4"><div><label className="text-xs font-bold text-slate-500">階段</label><select value={formData.currentStage} onChange={e => handleInputChange('currentStage', e.target.value)} className={inputClass}>{Object.values(ProjectStage).map(s => <option key={s} value={s}>{s}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">完工日</label><input type="date" value={formData.estimatedCompletionDate} onChange={e => handleInputChange('estimatedCompletionDate', e.target.value)} className={inputClass}/></div></div><div><label className="text-xs font-bold text-slate-500">客戶需求</label><textarea rows={3} value={formData.clientRequests} onChange={e => handleInputChange('clientRequests', e.target.value)} className={inputClass}/></div><div><label className="text-xs font-bold text-slate-500">內部備註</label><textarea rows={2} value={formData.internalNotes} onChange={e => handleInputChange('internalNotes', e.target.value)} className={inputClass}/></div></div>
-              {(currentUser.role === 'manager' || currentUser.role === 'engineer') && <div className="border border-red-200 bg-red-50 p-4 rounded-xl flex justify-between items-center"><span className="text-red-600 font-bold text-sm">危險區域</span><button onClick={handleDelete} className="text-red-500 border border-red-200 bg-white px-3 py-1 rounded-lg hover:bg-red-50">刪除專案</button></div>}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4"><h3 className="font-bold text-slate-800 flex gap-2 items-center"><PlusCircle className="w-5 h-5 text-accent"/>新增施工日誌</h3><div className="flex flex-col sm:flex-row gap-4"><select value={progressCategory} onChange={e => setProgressCategory(e.target.value)} className="border border-slate-300 rounded-lg p-2.5 font-medium text-sm text-slate-700 bg-slate-50">{CONSTRUCTION_PHASES.map(p => <option key={p} value={p}>{p}</option>)}</select><input value={progressDescription} onChange={e => setProgressDescription(e.target.value)} placeholder="輸入今日進度..." className="flex-1 border border-slate-300 rounded-lg p-2.5 font-medium text-sm bg-white" /><button onClick={handleAddProgress} className="bg-accent text-white px-4 rounded-lg flex items-center justify-center hover:bg-amber-700 transition-colors"><Send className="w-4 h-4"/></button></div></div>
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6"><h3 className="font-bold mb-6 flex gap-2 items-center text-slate-800"><History className="w-5 h-5 text-slate-400"/>時間軸</h3><div className="space-y-6 pl-4 border-l-2 border-slate-100">{(formData.history || []).sort((a,b) => b.timestamp - a.timestamp).map(log => <div key={log.id} className="relative pl-4 group"><div className="absolute -left-[21px] top-1 w-4 h-4 rounded-full bg-slate-200 border-4 border-white shadow-sm group-hover:bg-accent transition-colors"></div><div className="text-xs font-bold text-slate-400 mb-1">{new Date(log.timestamp).toLocaleString()} - {log.userName}</div><div className="bg-slate-50 p-3 rounded-lg border border-slate-100 group-hover:border-slate-200 transition-colors"><p className="font-bold text-slate-800 text-sm mb-1">{log.action}</p><p className="text-slate-600 text-sm leading-relaxed">{log.details}</p></div></div>)}</div></div>
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4"><h3 className="font-bold flex gap-2 text-slate-800"><FileText className="w-5 h-5"/>基本資料</h3><div className="grid grid-cols-2 gap-4"><div><label className="text-xs font-bold text-slate-500 uppercase mb-1">階段</label><select value={formData.currentStage} onChange={e => handleInputChange('currentStage', e.target.value)} className={inputClass}>{Object.values(ProjectStage).map(s => <option key={s} value={s}>{s}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500 uppercase mb-1">完工日</label><input type="date" value={formData.estimatedCompletionDate} onChange={e => handleInputChange('estimatedCompletionDate', e.target.value)} className={inputClass}/></div></div><div><label className="text-xs font-bold text-slate-500 uppercase mb-1">客戶需求</label><textarea rows={3} value={formData.clientRequests} onChange={e => handleInputChange('clientRequests', e.target.value)} className={inputClass}/></div><div><label className="text-xs font-bold text-slate-500 uppercase mb-1">內部備註</label><textarea rows={2} value={formData.internalNotes} onChange={e => handleInputChange('internalNotes', e.target.value)} className={inputClass}/></div></div>
+              {(currentUser.role === 'manager' || currentUser.role === 'engineer') && <div className="border border-red-200 bg-red-50 p-4 rounded-xl flex justify-between items-center"><span className="text-red-600 font-bold text-sm flex items-center gap-2"><AlertTriangle className="w-4 h-4"/>危險區域</span><button onClick={handleDelete} className="text-red-600 border border-red-200 bg-white px-3 py-1.5 rounded-lg hover:bg-red-50 font-bold text-sm transition-colors">刪除專案</button></div>}
             </>
           ) : (
             <div className="space-y-6">
-              <div className="bg-white p-6 rounded-2xl border border-purple-100"><div className="flex justify-between mb-4"><h3 className="font-bold text-slate-800 flex gap-2"><FileText className="text-purple-600 w-5 h-5"/>智能週報</h3><button onClick={handleGenerateReport} disabled={isGeneratingReport} className="bg-purple-600 text-white px-3 py-1 rounded-lg text-sm">{isGeneratingReport ? '生成中...' : '生成週報'}</button></div>{reportResult && <div className="bg-slate-50 p-4 rounded-xl text-sm whitespace-pre-wrap">{reportResult}</div>}</div>
-              <div className="bg-white p-6 rounded-2xl border border-purple-100"><h3 className="font-bold mb-4 flex gap-2"><AlertTriangle className="text-purple-600 w-5 h-5"/>問題分析</h3><textarea value={issueInput} onChange={e => setIssueInput(e.target.value)} className={inputClass} placeholder="輸入問題..."/><button onClick={handleAnalyzeIssue} disabled={isAnalyzing} className="w-full bg-slate-800 text-white mt-3 py-2 rounded-lg">{isAnalyzing ? '分析中...' : '開始分析'}</button>{analysisResult && <div className="mt-4 bg-purple-50 p-4 rounded-xl"><p className="text-purple-900 mb-2">{analysisResult.analysis}</p><ul className="list-disc pl-5 text-sm text-slate-700">{analysisResult.suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul></div>}</div>
+              <div className="bg-white p-6 rounded-2xl border border-purple-100 shadow-sm"><div className="flex justify-between mb-4"><h3 className="font-bold text-slate-800 flex gap-2"><FileText className="text-purple-600 w-5 h-5"/>智能週報</h3><button onClick={handleGenerateReport} disabled={isGeneratingReport} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50">{isGeneratingReport ? '生成中...' : '生成週報'}</button></div>{reportResult && <div className="bg-slate-50 p-4 rounded-xl text-sm whitespace-pre-wrap leading-relaxed border border-slate-200 text-slate-700">{reportResult}</div>}</div>
+              <div className="bg-white p-6 rounded-2xl border border-purple-100 shadow-sm"><h3 className="font-bold mb-4 flex gap-2 text-slate-800"><AlertTriangle className="text-purple-600 w-5 h-5"/>問題分析</h3><textarea value={issueInput} onChange={e => setIssueInput(e.target.value)} className={inputClass} placeholder="輸入問題..."/><button onClick={handleAnalyzeIssue} disabled={isAnalyzing} className="w-full bg-slate-800 hover:bg-slate-900 text-white mt-3 py-2.5 rounded-lg font-bold transition-colors disabled:opacity-50">{isAnalyzing ? '分析中...' : '開始分析'}</button>{analysisResult && <div className="mt-4 bg-purple-50 p-4 rounded-xl border border-purple-100"><p className="text-purple-900 mb-3 font-medium">{analysisResult.analysis}</p><ul className="space-y-2">{analysisResult.suggestions.map((s, i) => <li key={i} className="flex gap-2 text-sm text-slate-700 bg-white p-2 rounded border border-purple-100"><CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0"/>{s}</li>)}</ul></div>}</div>
             </div>
           )}
         </div>
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase">負責人</h3><div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold">{project.assignedEmployee.charAt(0)}</div><span className="font-bold">{project.assignedEmployee}</span></div>{(currentUser.role === 'manager' || currentUser.role === 'engineer') && <select value={formData.assignedEmployee} onChange={e => handleInputChange('assignedEmployee', e.target.value)} className="mt-4 w-full border rounded p-2">{employeeNames.map(n => <option key={n} value={n}>{n}</option>)}</select>}</div>
-          <div className="bg-white p-6 rounded-2xl border shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase">聯絡資訊</h3><div className="space-y-3"><div><div className="flex gap-2 mb-1"><Phone className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">電話</span></div><input value={formData.contactPhone} onChange={e => handleInputChange('contactPhone', e.target.value)} className={inputClass}/></div><div><div className="flex gap-2 mb-1"><MapPin className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">地址</span></div><input value={formData.address} onChange={e => handleInputChange('address', e.target.value)} className={inputClass}/></div></div></div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase tracking-wide">負責人</h3><div className="flex items-center gap-3"><div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center font-bold text-lg text-slate-600 border border-slate-200">{project.assignedEmployee.charAt(0)}</div><div><span className="font-bold text-lg text-slate-900">{project.assignedEmployee}</span><p className="text-xs text-slate-500 font-medium">Lead Designer</p></div></div>{(currentUser.role === 'manager' || currentUser.role === 'engineer') && <select value={formData.assignedEmployee} onChange={e => handleInputChange('assignedEmployee', e.target.value)} className="mt-4 w-full border border-slate-300 rounded-lg p-2.5 bg-slate-50 font-medium text-sm outline-none">{employeeNames.map(n => <option key={n} value={n}>{n}</option>)}</select>}</div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase tracking-wide">聯絡資訊</h3><div className="space-y-4"><div><div className="flex gap-2 mb-1.5"><Phone className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">電話</span></div><input value={formData.contactPhone} onChange={e => handleInputChange('contactPhone', e.target.value)} className={inputClass}/></div><div><div className="flex gap-2 mb-1.5"><MapPin className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">地址</span></div><input value={formData.address} onChange={e => handleInputChange('address', e.target.value)} className={inputClass}/></div></div></div>
         </div>
       </div>
     </div>
@@ -524,21 +673,21 @@ const Layout: React.FC<{ children: React.ReactNode; activeTab: string; onTabChan
   const canViewDashboard = currentUser.role === 'manager' || currentUser.role === 'engineer' || currentUser.canViewDashboard;
   const canManageTeam = currentUser.role === 'manager' || currentUser.role === 'engineer';
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:static lg:translate-x-0 flex flex-col`}>
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center"><div className="flex gap-3 items-center"><div className="bg-accent/10 p-2 rounded-lg"><PenTool className="text-accent"/></div><div><h1 className="font-bold">澤物專案</h1><span className="text-[10px] text-slate-400 tracking-widest uppercase">Management</span></div></div><button className="lg:hidden" onClick={() => setIsSidebarOpen(false)}><X className="text-slate-400"/></button></div>
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+      {isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:static lg:translate-x-0 flex flex-col shadow-2xl lg:shadow-none`}>
+        <div className="p-6 border-b border-slate-800 flex justify-between items-center"><div className="flex gap-3 items-center"><div className="bg-accent/10 p-2 rounded-lg"><PenTool className="text-accent"/></div><div><h1 className="font-bold tracking-wide">澤物專案</h1><span className="text-[10px] text-slate-400 tracking-widest uppercase font-medium">Management</span></div></div><button className="lg:hidden p-1 hover:bg-slate-800 rounded" onClick={() => setIsSidebarOpen(false)}><X className="text-slate-400 w-5 h-5"/></button></div>
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
-          {canViewDashboard && <button onClick={() => { onTabChange('dashboard'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 ${activeTab === 'dashboard' ? 'bg-accent' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5"/>總覽儀表板</button>}
-          <button onClick={() => { onTabChange('projects'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 ${activeTab === 'projects' ? 'bg-accent' : 'text-slate-400 hover:bg-slate-800'}`}><FolderKanban className="w-5 h-5"/>{canViewDashboard ? '所有專案' : '我的專案'}</button>
-          {canManageTeam && <><div className="my-2 border-t border-slate-800"></div><p className="text-xs text-slate-500 font-bold px-4 mb-2">管理</p><button onClick={() => { onTabChange('team'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 ${activeTab === 'team' ? 'bg-accent' : 'text-slate-400 hover:bg-slate-800'}`}><Users className="w-5 h-5"/>團隊成員</button></>}
-          {(currentUser.role === 'manager' || currentUser.role === 'engineer') && <div className="pt-4 mt-auto"><button onClick={onExportData} className="flex w-full p-3 rounded-xl gap-3 text-slate-400 hover:bg-slate-800 border border-slate-800"><Download className="w-5 h-5"/>匯出資料 (CSV)</button></div>}
+          {canViewDashboard && <button onClick={() => { onTabChange('dashboard'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 font-medium text-sm transition-all ${activeTab === 'dashboard' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><LayoutDashboard className="w-5 h-5"/>總覽儀表板</button>}
+          <button onClick={() => { onTabChange('projects'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 font-medium text-sm transition-all ${activeTab === 'projects' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><FolderKanban className="w-5 h-5"/>{canViewDashboard ? '所有專案' : '我的專案'}</button>
+          {canManageTeam && <><div className="my-2 border-t border-slate-800 mx-2"></div><p className="text-xs text-slate-500 font-bold px-4 mb-2 uppercase tracking-wider">管理</p><button onClick={() => { onTabChange('team'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 font-medium text-sm transition-all ${activeTab === 'team' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Users className="w-5 h-5"/>團隊成員</button></>}
+          {(currentUser.role === 'manager' || currentUser.role === 'engineer') && <div className="pt-4 mt-auto"><button onClick={onExportData} className="flex w-full p-3 rounded-xl gap-3 text-slate-400 hover:bg-slate-800 hover:text-emerald-400 border border-slate-800 transition-colors font-medium text-sm"><Download className="w-5 h-5"/>匯出資料 (CSV)</button></div>}
         </nav>
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between items-center"><div className="flex gap-3 items-center"><div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center font-bold">{currentUser.avatarInitials}</div><div><p className="text-sm font-bold">{currentUser.name}</p><p className="text-xs text-slate-500">{currentUser.role}</p></div></div><button onClick={onLogout}><LogOut className="text-slate-500 hover:text-white"/></button></div>
+        <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between items-center"><div className="flex gap-3 items-center"><div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center font-bold text-sm border-2 border-slate-800">{currentUser.avatarInitials}</div><div><p className="text-sm font-bold truncate w-24">{currentUser.name}</p><p className="text-xs text-slate-500 font-medium">{currentUser.role}</p></div></div><button onClick={onLogout} className="p-2 hover:bg-slate-800 rounded-lg transition-colors"><LogOut className="text-slate-500 hover:text-white w-5 h-5"/></button></div>
       </aside>
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="lg:hidden bg-white border-b p-4 flex justify-between items-center sticky top-0 z-20"><div className="flex gap-2 font-bold text-slate-800"><PenTool className="text-accent"/>澤物專案</div><button onClick={() => setIsSidebarOpen(true)}><Menu className="text-slate-700"/></button></header>
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8"><div className="max-w-7xl mx-auto">{children}</div></main>
+        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-20 shadow-sm"><div className="flex gap-2 font-bold text-slate-800 items-center"><PenTool className="text-accent w-5 h-5"/>澤物專案</div><button onClick={() => setIsSidebarOpen(true)} className="p-2 active:bg-slate-100 rounded-full"><Menu className="text-slate-700 w-6 h-6"/></button></header>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth"><div className="max-w-7xl mx-auto">{children}</div></main>
       </div>
     </div>
   );
@@ -602,7 +751,7 @@ const App: React.FC = () => {
     const link = document.createElement('a'); link.href = url; link.download = `Projects_${new Date().toISOString().split('T')[0]}.csv`; document.body.appendChild(link); link.click();
   };
 
-  if (isLoading) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 className="w-10 h-10 text-accent animate-spin"/><p className="text-slate-500 font-bold">載入資料中...</p></div>;
+  if (isLoading) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4 font-sans"><Loader2 className="w-10 h-10 text-accent animate-spin"/><p className="text-slate-500 font-bold">載入資料中...</p></div>;
   if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
 
   let displayProjects = (currentUser.role === 'manager' || currentUser.role === 'engineer') ? projects : projects.filter(p => p.assignedEmployee === currentUser.name);
@@ -620,9 +769,9 @@ const App: React.FC = () => {
       {view === 'dashboard' && (currentUser.role === 'manager' || currentUser.role === 'engineer' || currentUser.canViewDashboard) && <ProjectDashboard projects={projects} onSelectProject={handleSelectProject} employeeNames={employeeNames} onFilterClick={handleDashboardFilterClick}/>}
       {view === 'team' && (currentUser.role === 'manager' || currentUser.role === 'engineer') && <TeamManagement users={users} currentUser={currentUser} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser}/>}
       {view === 'projects' && (
-        <div className="space-y-6 animate-fade-in">
-          <div className="flex flex-col md:flex-row justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border"><div><div className="flex items-center gap-2">{projectFilter !== 'ALL' && <button onClick={() => setView('dashboard')}><ArrowLeft className="w-5 h-5 text-slate-400"/></button>}<h2 className="text-2xl font-bold text-slate-800">{(currentUser.role === 'manager' || currentUser.role === 'engineer') ? getFilterName() : '我的專案'}</h2></div><p className="text-slate-500 text-sm mt-1">共 {displayProjects.length} 個案場</p></div><div className="flex gap-2 w-full md:w-auto">{projectFilter !== 'ALL' && <button onClick={() => setProjectFilter('ALL')} className="px-4 py-2 border rounded-lg text-slate-600">清除篩選</button>}<button onClick={() => setShowNewProjectModal(true)} className="bg-accent text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md"><Plus className="w-5 h-5"/>新增案場</button></div></div>
-          {displayProjects.length === 0 ? <div className="text-center py-20 bg-white rounded-xl border-2 border-dashed"><p className="text-slate-400">無符合資料</p></div> : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{displayProjects.map(p => <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-lg transition-all cursor-pointer group flex flex-col"><div className="h-48 bg-slate-100 relative"><img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/><div className="absolute top-3 right-3"><span className={`px-2.5 py-1 rounded-md text-xs font-bold backdrop-blur-md ${p.currentStage === '施工中' ? 'bg-amber-500/90 text-white' : 'bg-white/90 text-slate-800'}`}>{p.currentStage}</span></div></div><div className="p-5 flex-1 flex flex-col"><h3 className="font-bold text-lg mb-1">{p.projectName}</h3><p className="text-slate-500 text-sm mb-4">{p.assignedEmployee} | {p.clientName}</p><div className="mt-auto pt-4 border-t flex justify-between text-xs text-slate-400"><span>更新: {new Date(p.lastUpdatedTimestamp).toLocaleDateString()}</span><span className="text-accent font-bold group-hover:text-amber-700">查看詳情 &rarr;</span></div></div></div>)}</div>}
+        <div className="space-y-6 animate-fade-in font-sans">
+          <div className="flex flex-col md:flex-row justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div><div className="flex items-center gap-2">{projectFilter !== 'ALL' && <button onClick={() => setView('dashboard')}><ArrowLeft className="w-5 h-5 text-slate-400"/></button>}<h2 className="text-2xl font-bold text-slate-800">{(currentUser.role === 'manager' || currentUser.role === 'engineer') ? getFilterName() : '我的專案'}</h2></div><p className="text-slate-500 text-sm mt-1 font-medium">共 {displayProjects.length} 個案場</p></div><div className="flex gap-2 w-full md:w-auto">{projectFilter !== 'ALL' && <button onClick={() => setProjectFilter('ALL')} className="px-4 py-2 border rounded-lg text-slate-600 font-medium hover:bg-slate-50">清除篩選</button>}<button onClick={() => setShowNewProjectModal(true)} className="bg-accent text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md hover:bg-amber-700 transition-colors"><Plus className="w-5 h-5"/>新增案場</button></div></div>
+          {displayProjects.length === 0 ? <div className="text-center py-20 bg-white rounded-xl border-2 border-dashed border-slate-200"><p className="text-slate-400 font-medium text-lg">無符合資料</p></div> : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{displayProjects.map(p => <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer group flex flex-col"><div className="h-48 bg-slate-100 relative overflow-hidden"><img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/><div className="absolute top-0 inset-x-0 h-20 bg-gradient-to-b from-black/50 to-transparent"></div><div className="absolute top-3 right-3"><span className={`px-2.5 py-1 rounded-md text-xs font-bold backdrop-blur-md shadow-sm ${p.currentStage === '施工中' ? 'bg-amber-500/90 text-white' : 'bg-white/90 text-slate-800'}`}>{p.currentStage}</span></div></div><div className="p-5 flex-1 flex flex-col"><h3 className="font-bold text-lg mb-1 text-slate-800 line-clamp-1">{p.projectName}</h3><p className="text-slate-500 text-sm mb-4 font-medium">{p.assignedEmployee} | {p.clientName}</p><div className="mt-auto pt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><span>更新: {new Date(p.lastUpdatedTimestamp).toLocaleDateString()}</span><span className="text-accent font-bold group-hover:text-amber-700 transition-colors flex items-center gap-1">查看詳情 <ArrowRightIcon className="w-3 h-3"/></span></div></div></div>)}</div>}
         </div>
       )}
       {view === 'detail' && selectedProject && <ProjectDetail project={selectedProject} currentUser={currentUser} onBack={handleBack} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} employeeNames={employeeNames}/>}
