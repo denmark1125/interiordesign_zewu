@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon, ListChecks } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
@@ -116,21 +115,18 @@ const getRandomCover = () => {
 };
 
 const validateImageFile = (file: File): Promise<boolean> => {
-  return new Promise((resolve, reject) => {
-    // 1. INCREASED LIMIT: Check Size (10MB = 10 * 1,048,576 bytes)
-    // Mobile photos are often large (3-5MB), so 1MB is too small.
-    const MAX_SIZE = 10 * 1024 * 1024; 
+  return new Promise((resolve) => {
+    // 1. STRICT LIMIT: 2MB (2 * 1024 * 1024 bytes)
+    const MAX_SIZE = 2 * 1024 * 1024; 
     
     if (file.size > MAX_SIZE) {
-      alert("圖片大小超過 10MB 限制，請選擇較小的照片。");
-      resolve(false); // Resolve false instead of reject to prevent uncaught errors
+      alert("圖片大小超過 2MB 限制，請選擇較小的照片或截圖。");
+      resolve(false); 
       return;
     }
 
-    // 2. REMOVED ASPECT RATIO BLOCKING
-    // Using window.confirm often hangs on mobile webviews. 
-    // We just accept the image as is to ensure upload success.
-    
+    // 2. NO CONFIRM DIALOGS: Directly allow upload to prevent mobile freeze
+    console.log("Image validated:", file.name, file.size);
     resolve(true);
   });
 };
@@ -151,7 +147,6 @@ const uploadImageFile = async (file: File, projectId: string): Promise<string> =
 // 3. GEMINI SERVICE (Lazy Init for APK Safety)
 // ==========================================
 
-// Helper to get AI instance safely
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -163,28 +158,15 @@ const getAIClient = () => {
 const generateProjectReport = async (project: DesignProject): Promise<string> => {
   try {
     const ai = getAIClient();
-    
     const prompt = `
     請為以下室內設計專案撰寫一份專業的週報：
-    
     專案名稱：${project.projectName}
     目前階段：${project.currentStage}
     負責人員：${project.assignedEmployee}
-    
-    本週最新進度：
-    ${project.latestProgressNotes}
-
-    客戶需求：
-    ${project.clientRequests}
-
-    內部備註：
-    ${project.internalNotes}
-
-    請包含：
-    1. 本週進度摘要
-    2. 下週預計事項
-    3. 注意事項 (基於客戶需求與內部備註)
-    
+    本週最新進度：${project.latestProgressNotes}
+    客戶需求：${project.clientRequests}
+    內部備註：${project.internalNotes}
+    請包含：1. 本週進度摘要 2. 下週預計事項 3. 注意事項 (基於客戶需求與內部備註)
     語氣請專業、簡潔。`;
 
     const response = await ai.models.generateContent({
@@ -201,7 +183,6 @@ const generateProjectReport = async (project: DesignProject): Promise<string> =>
 const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<{analysis: string, suggestions: string[]}> => {
   try {
     const ai = getAIClient();
-
     const prompt = `
     針對以下室內設計專案問題進行分析與建議：
     專案：${project.projectName} (${project.currentStage})
@@ -209,7 +190,7 @@ const analyzeDesignIssue = async (project: DesignProject, inputContent: string):
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-2.5-flash', // Switched to Flash for better stability
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -217,19 +198,14 @@ const analyzeDesignIssue = async (project: DesignProject, inputContent: string):
           type: Type.OBJECT,
           properties: {
             analysis: { type: Type.STRING },
-            suggestions: { 
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            }
+            suggestions: { type: Type.ARRAY, items: { type: Type.STRING } }
           },
           required: ["analysis", "suggestions"]
         }
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text);
-    }
+    if (response.text) return JSON.parse(response.text);
     throw new Error("Empty response from AI");
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -270,7 +246,6 @@ const LoginScreen: React.FC<{ onLogin: (user: User) => void; users: User[] }> = 
         <h1 className="text-3xl font-bold text-slate-800 tracking-tight">澤物專案管理</h1>
         <p className="text-slate-500 mt-2 font-medium">Interior Design Project Management</p>
       </div>
-
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 max-w-md w-full">
         <h2 className="text-xl font-bold text-slate-800 mb-6 text-center">員工登入</h2>
         <form onSubmit={handleLoginSubmit} className="space-y-4">
@@ -328,12 +303,11 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
           setImageFile(file);
           setPreviewUrl(URL.createObjectURL(file));
         } else {
-           // Reset input if invalid
            e.target.value = '';
         }
       } catch (err) {
         console.error(err);
-        e.target.value = ''; // Reset input
+        e.target.value = ''; 
       }
     }
   };
@@ -353,8 +327,6 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
     try {
       const projectId = `P${Date.now().toString().slice(-4)}`;
       let finalImageUrl = previewUrl;
-
-      // Upload image if selected
       if (imageFile) {
         finalImageUrl = await uploadImageFile(imageFile, projectId);
       }
@@ -393,7 +365,6 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
         </div>
         
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Cover Image Selection - Improved for Mobile Touch */}
           <div className="space-y-3">
              <label className="block text-sm font-bold text-slate-700">封面照片</label>
              <div className="relative h-48 rounded-xl overflow-hidden border border-slate-200 group bg-slate-100">
@@ -403,21 +374,13 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
                       <button type="button" className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-lg pointer-events-none">
                         <Upload className="w-4 h-4" /> 上傳照片
                       </button>
-                      {/* Opacity 0 file input for touch target */}
-                      <input 
-                        type="file" 
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-                        accept="image/*" 
-                        onChange={handleImageChange} 
-                      />
+                      <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={handleImageChange} />
                     </div>
                     <button type="button" onClick={handleRandomCover} className="bg-white/90 text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-white transition-colors shadow-lg z-10 relative">
                        <RefreshCw className="w-4 h-4" /> 隨機產生
                     </button>
                 </div>
-                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm pointer-events-none">
-                   上限 10MB
-                </div>
+                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm pointer-events-none">上限 2MB</div>
              </div>
           </div>
 
@@ -528,22 +491,13 @@ const TeamManagement: React.FC<{ users: User[]; currentUser: User; onAddUser: (u
         </div>
       )}
       
-      {/* Mobile Card View */}
       <div className="md:hidden space-y-4">
         {users.length === 0 ? <p className="text-center text-slate-400 py-4">讀取中或無成員資料...</p> : users.map(user => (
           <div key={user.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
              <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-base font-bold border border-slate-200 shadow-sm">
-                      {user.avatarInitials}
-                    </div>
-                    <div>
-                      <div className="font-bold text-slate-900 text-lg flex items-center gap-2">
-                        {user.name}
-                        {user.id === currentUser.id && <span className="text-[10px] bg-accent text-white px-1.5 py-0.5 rounded font-bold">ME</span>}
-                      </div>
-                      <div className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded w-fit mt-1">@{user.username}</div>
-                    </div>
+                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-base font-bold border border-slate-200 shadow-sm">{user.avatarInitials}</div>
+                    <div><div className="font-bold text-slate-900 text-lg flex items-center gap-2">{user.name}{user.id === currentUser.id && <span className="text-[10px] bg-accent text-white px-1.5 py-0.5 rounded font-bold">ME</span>}</div><div className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded w-fit mt-1">@{user.username}</div></div>
                   </div>
                   {renderRoleBadge(user.role)}
              </div>
@@ -574,26 +528,38 @@ const TeamManagement: React.FC<{ users: User[]; currentUser: User; onAddUser: (u
 };
 
 // --- ProjectDashboard ---
-const ProjectDashboard: React.FC<{ projects: DesignProject[]; onSelectProject: (project: DesignProject) => void; employeeNames: string[]; onFilterClick: (filter: ProjectFilterType) => void; }> = ({ projects, onSelectProject, employeeNames, onFilterClick }) => {
-  const [selectedEmployee, setSelectedEmployee] = useState<string>('All');
+interface DashboardProps {
+  projects: DesignProject[];
+  onSelectProject: (project: DesignProject) => void;
+  employeeNames: string[];
+  onFilterClick: (filter: ProjectFilterType) => void;
+  selectedEmployee: string;
+  onEmployeeChange: (name: string) => void;
+}
+
+const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject, employeeNames, onFilterClick, selectedEmployee, onEmployeeChange }) => {
+  // Use the props to filter (managed by parent App component now)
   const filteredProjects = selectedEmployee === 'All' ? projects : projects.filter(p => p.assignedEmployee === selectedEmployee);
   const stageCounts = filteredProjects.reduce((acc, p) => { acc[p.currentStage] = (acc[p.currentStage] || 0) + 1; return acc; }, {} as Record<string, number>);
   const pieData = [{ name: ProjectStage.CONTACT, value: stageCounts[ProjectStage.CONTACT] || 0, color: '#94a3b8' }, { name: ProjectStage.DESIGN, value: stageCounts[ProjectStage.DESIGN] || 0, color: '#3b82f6' }, { name: ProjectStage.CONSTRUCTION, value: stageCounts[ProjectStage.CONSTRUCTION] || 0, color: '#f59e0b' }, { name: ProjectStage.ACCEPTANCE, value: stageCounts[ProjectStage.ACCEPTANCE] || 0, color: '#a855f7' }, { name: ProjectStage.COMPLETED, value: stageCounts[ProjectStage.COMPLETED] || 0, color: '#10b981' },].filter(d => d.value > 0);
   
+  // Bottom List: Show ALL projects for the selected employee, not just upcoming.
+  const projectList = [...filteredProjects].sort((a, b) => b.lastUpdatedTimestamp - a.lastUpdatedTimestamp);
+
   const today = new Date();
   const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const upcomingDeadlines = filteredProjects.filter(p => { if (p.currentStage === ProjectStage.COMPLETED) return false; const date = new Date(p.estimatedCompletionDate); return date >= today && date <= thirtyDaysLater; }).sort((a, b) => new Date(a.estimatedCompletionDate).getTime() - new Date(b.estimatedCompletionDate).getTime());
+  const upcomingCount = filteredProjects.filter(p => { if (p.currentStage === ProjectStage.COMPLETED) return false; const date = new Date(p.estimatedCompletionDate); return date >= today && date <= thirtyDaysLater; }).length;
 
   const stats = [
     { label: '負責案場總數', value: filteredProjects.length, icon: Briefcase, color: 'bg-slate-100 text-slate-600', filterType: 'ALL' as ProjectFilterType },
     { label: '施工中案場', value: stageCounts[ProjectStage.CONSTRUCTION] || 0, icon: AlertTriangle, color: 'bg-amber-100 text-amber-600', filterType: 'CONSTRUCTION' as ProjectFilterType },
     { label: '設計/接洽中', value: (stageCounts[ProjectStage.DESIGN] || 0) + (stageCounts[ProjectStage.CONTACT] || 0), icon: Clock, color: 'bg-blue-100 text-blue-600', filterType: 'DESIGN_CONTACT' as ProjectFilterType },
-    { label: '即將完工', value: upcomingDeadlines.length, icon: CheckCircle, color: 'bg-purple-100 text-purple-600', filterType: 'UPCOMING' as ProjectFilterType },
+    { label: '即將完工 (30天內)', value: upcomingCount, icon: CheckCircle, color: 'bg-purple-100 text-purple-600', filterType: 'UPCOMING' as ProjectFilterType },
   ];
 
   return (
     <div className="space-y-6 animate-fade-in font-sans">
-      <div className="flex flex-col md:flex-row justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2><p className="text-slate-500 text-sm font-medium">{selectedEmployee === 'All' ? '全公司案場' : `${selectedEmployee} 的案場`}</p></div><div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200"><Filter className="w-4 h-4 text-slate-400" /><select className="bg-transparent font-bold text-slate-700 outline-none" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}><option value="All">顯示全部人員</option>{employeeNames.map(emp => <option key={emp} value={emp}>{emp}</option>)}</select></div></div>
+      <div className="flex flex-col md:flex-row justify-between gap-4"><div><h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2><p className="text-slate-500 text-sm font-medium">{selectedEmployee === 'All' ? '全公司案場' : `${selectedEmployee} 的案場`}</p></div><div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200"><Filter className="w-4 h-4 text-slate-400" /><select className="bg-transparent font-bold text-slate-700 outline-none" value={selectedEmployee} onChange={(e) => onEmployeeChange(e.target.value)}><option value="All">顯示全部人員</option>{employeeNames.map(emp => <option key={emp} value={emp}>{emp}</option>)}</select></div></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, idx) => (
           <button key={idx} onClick={() => onFilterClick(stat.filterType)} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col hover:scale-[1.02] transition-all text-left group">
@@ -603,39 +569,45 @@ const ProjectDashboard: React.FC<{ projects: DesignProject[]; onSelectProject: (
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col"><h3 className="font-bold text-slate-800 mb-6">階段分佈</h3><div className="flex-1 min-h-[250px]"><ResponsiveContainer><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4} dataKey="value">{pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div></div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col"><h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><Clock className="w-5 h-5 text-amber-500" />即將完工 (30天內)</h3><div className="flex-1 overflow-auto">
-          {/* Desktop View */}
-          <table className="w-full text-sm text-left hidden md:table"><thead className="text-xs text-slate-500 uppercase bg-slate-50 rounded-lg"><tr><th className="px-4 py-3">案名</th><th className="px-4 py-3">負責人</th><th className="px-4 py-3">階段</th><th className="px-4 py-3">完工日</th></tr></thead>
-            <tbody>
-              {upcomingDeadlines.length === 0 ? <tr><td colSpan={4} className="text-center py-8 text-slate-400">目前無即將完工案場</td></tr> : 
-                upcomingDeadlines.map(p => (
-                  <tr key={p.id} onClick={() => onSelectProject(p)} className="hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50">
-                    <td className="px-4 py-3 font-bold text-slate-900">{p.projectName}</td>
-                    <td className="px-4 py-3 text-slate-900">{p.assignedEmployee}</td>
-                    <td className="px-4 py-3"><span className="bg-slate-100 text-slate-800 px-2 py-1 rounded text-xs font-bold">{p.currentStage}</span></td>
-                    <td className="px-4 py-3 font-mono text-slate-900 font-bold">{p.estimatedCompletionDate}</td>
-                  </tr>
-              ))}
-            </tbody>
-          </table>
-          {/* Mobile View */}
-          <div className="md:hidden space-y-3">
-             {upcomingDeadlines.length === 0 ? <p className="text-center py-8 text-slate-400">目前無即將完工案場</p> : 
-               upcomingDeadlines.map(p => (
-                 <div key={p.id} onClick={() => onSelectProject(p)} className="p-4 rounded-xl bg-slate-50 active:bg-slate-100">
-                    <div className="flex justify-between items-start mb-2">
-                       <span className="font-bold text-slate-900">{p.projectName}</span>
-                       <span className="text-[10px] font-bold bg-white border border-slate-200 px-2 py-0.5 rounded">{p.currentStage}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-slate-600">
-                       <span>{p.assignedEmployee}</span>
-                       <span className="font-bold text-red-600">完工: {p.estimatedCompletionDate}</span>
-                    </div>
-                 </div>
-               ))
-             }
+        
+        {/* Project List Section - Shows ALL projects filtered by employee */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
+          <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+            <ListChecks className="w-5 h-5 text-slate-600" />
+            所有案場列表 (依狀態排序)
+          </h3>
+          <div className="flex-1 overflow-auto">
+            <table className="w-full text-sm text-left hidden md:table"><thead className="text-xs text-slate-500 uppercase bg-slate-50 rounded-lg"><tr><th className="px-4 py-3">案名</th><th className="px-4 py-3">負責人</th><th className="px-4 py-3">階段</th><th className="px-4 py-3">完工日</th></tr></thead>
+              <tbody>
+                {projectList.length === 0 ? <tr><td colSpan={4} className="text-center py-8 text-slate-400">目前無相關案場</td></tr> : 
+                  projectList.map(p => (
+                    <tr key={p.id} onClick={() => onSelectProject(p)} className="hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50">
+                      <td className="px-4 py-3 font-bold text-slate-900">{p.projectName}</td>
+                      <td className="px-4 py-3 text-slate-900 font-medium">{p.assignedEmployee}</td>
+                      <td className="px-4 py-3"><span className={`px-2 py-1 rounded-md text-xs font-bold ${p.currentStage === ProjectStage.CONSTRUCTION ? 'bg-amber-100 text-amber-700' : p.currentStage === ProjectStage.COMPLETED ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>{p.currentStage}</span></td>
+                      <td className="px-4 py-3 font-mono text-slate-900 font-bold">{p.estimatedCompletionDate}</td>
+                    </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="md:hidden space-y-3">
+               {projectList.length === 0 ? <p className="text-center py-8 text-slate-400">目前無相關案場</p> : 
+                 projectList.map(p => (
+                   <div key={p.id} onClick={() => onSelectProject(p)} className="p-4 rounded-xl bg-slate-50 active:bg-slate-100">
+                      <div className="flex justify-between items-start mb-2">
+                         <span className="font-bold text-slate-900">{p.projectName}</span>
+                         <span className="text-[10px] font-bold bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-800">{p.currentStage}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-slate-700">
+                         <span className="font-bold text-slate-900">{p.assignedEmployee}</span>
+                         <span className="font-bold text-slate-900">完工: {p.estimatedCompletionDate}</span>
+                      </div>
+                   </div>
+                 ))
+               }
+            </div>
           </div>
-        </div></div>
+        </div>
       </div>
     </div>
   );
@@ -669,7 +641,7 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
     let hasChanges = false;
     const newLogs: HistoryLog[] = [];
 
-    // Stage Change - IMPORTANT: Removed confirm dialog for APK compatibility and better UX
+    // Stage Change - IMPORTANT: Removed confirm dialog for APK compatibility
     if (formData.currentStage !== project.currentStage) {
        newLogs.push({
         id: `h-${Date.now()}-3`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name,
@@ -719,12 +691,10 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
             onUpdateProject({ ...formData, imageUrl: url, lastUpdatedTimestamp: Date.now() });
             alert("封面更新成功！");
          } else {
-             // Reset the file input if validation failed (false resolved)
              e.target.value = '';
          }
        } catch (err) {
          console.error(err);
-         // Error handled in utility
          e.target.value = '';
        } finally {
          setIsUploading(false);
@@ -795,43 +765,51 @@ const Layout: React.FC<{ children: React.ReactNode; activeTab: string; onTabChan
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       {isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:static lg:translate-x-0 flex flex-col shadow-2xl lg:shadow-none`}>
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center"><div className="flex gap-3 items-center"><div className="bg-accent/10 p-2 rounded-lg"><PenTool className="text-accent"/></div><div><h1 className="font-bold tracking-wide">澤物專案</h1><span className="text-[10px] text-slate-400 tracking-widest uppercase font-medium">Management</span></div></div><button className="lg:hidden p-1 hover:bg-slate-800 rounded" onClick={() => setIsSidebarOpen(false)}><X className="text-slate-400 w-5 h-5"/></button></div>
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
-          {canViewDashboard && <button onClick={() => { onTabChange('dashboard'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 font-medium text-sm transition-all ${activeTab === 'dashboard' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><LayoutDashboard className="w-5 h-5"/>總覽儀表板</button>}
-          <button onClick={() => { onTabChange('projects'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 font-medium text-sm transition-all ${activeTab === 'projects' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><FolderKanban className="w-5 h-5"/>{canViewDashboard ? '所有專案' : '我的專案'}</button>
-          {canManageTeam && <><div className="my-2 border-t border-slate-800 mx-2"></div><p className="text-xs text-slate-500 font-bold px-4 mb-2 uppercase tracking-wider">管理</p><button onClick={() => { onTabChange('team'); setIsSidebarOpen(false); }} className={`flex w-full p-3 rounded-xl gap-3 font-medium text-sm transition-all ${activeTab === 'team' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Users className="w-5 h-5"/>團隊成員</button></>}
-          {(currentUser.role === 'manager' || currentUser.role === 'engineer') && <div className="pt-4 mt-auto"><button onClick={onExportData} className="flex w-full p-3 rounded-xl gap-3 text-slate-400 hover:bg-slate-800 hover:text-emerald-400 border border-slate-800 transition-colors font-medium text-sm"><Download className="w-5 h-5"/>匯出資料 (CSV)</button></div>}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto lg:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
+        <div className="flex items-center justify-between p-6 border-b border-slate-800/50"><div className="flex items-center gap-3"><div className="bg-accent/10 p-2 rounded-lg"><PenTool className="text-accent h-6 w-6" /></div><div><h1 className="text-lg font-bold tracking-wide leading-none">澤物專案</h1><span className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">Management</span></div></div><button className="lg:hidden p-1 hover:bg-slate-800 rounded-md transition-colors" onClick={() => setIsSidebarOpen(false)}><X className="h-5 w-5 text-slate-400" /></button></div>
+        <nav className="p-4 space-y-1.5 flex-1 overflow-y-auto flex flex-col">
+          {canViewDashboard && <button onClick={() => { onTabChange('dashboard'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${activeTab === 'dashboard' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><LayoutDashboard className="h-5 w-5 mr-3" />總覽儀表板</button>}
+          <button onClick={() => { onTabChange('projects'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${activeTab === 'projects' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><FolderKanban className="h-5 w-5 mr-3" />{canViewDashboard ? '所有專案列表' : '我的專案'}</button>
+          {canManageTeam && <><div className="my-4 border-t border-slate-800/50 mx-2"></div><div className="px-4 text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">管理功能</div><button onClick={() => { onTabChange('team'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${activeTab === 'team' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Users className="h-5 w-5 mr-3" />團隊成員管理</button></>}
+          {(canManageTeam) && <div className="mt-auto pt-4"><button onClick={() => { onExportData(); setIsSidebarOpen(false); }} className="flex items-center w-full px-4 py-3.5 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-emerald-400 transition-all font-medium text-sm border border-slate-800 hover:border-emerald-900/50 group"><Download className="h-5 w-5 mr-3 group-hover:scale-110 transition-transform" />匯出資料 (CSV)</button></div>}
         </nav>
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-between items-center"><div className="flex gap-3 items-center"><div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center font-bold text-sm border-2 border-slate-800">{currentUser.avatarInitials}</div><div><p className="text-sm font-bold truncate w-24">{currentUser.name}</p><p className="text-xs text-slate-500 font-medium">{currentUser.role}</p></div></div><button onClick={onLogout} className="p-2 hover:bg-slate-800 rounded-lg transition-colors"><LogOut className="text-slate-500 hover:text-white w-5 h-5"/></button></div>
+        <div className="p-4 bg-slate-950 border-t border-slate-800/50"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="h-9 w-9 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center font-bold text-sm text-white border-2 border-slate-800 shadow-md">{currentUser.avatarInitials}</div><div className="overflow-hidden"><p className="text-sm font-bold text-white truncate w-28">{currentUser.name}</p><p className="text-xs text-slate-500 capitalize flex items-center gap-1">{currentUser.role === 'manager' && 'Administrator'}{currentUser.role === 'engineer' && 'System Engineer'}{currentUser.role === 'employee' && 'Designer'}</p></div></div><button onClick={onLogout} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-slate-800 rounded-lg" title="登出"><LogOut className="w-5 h-5" /></button></div></div>
       </aside>
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-20 shadow-sm"><div className="flex gap-2 font-bold text-slate-800 items-center"><PenTool className="text-accent w-5 h-5"/>澤物專案</div><button onClick={() => setIsSidebarOpen(true)} className="p-2 active:bg-slate-100 rounded-full"><Menu className="text-slate-700 w-6 h-6"/></button></header>
+        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-20 shadow-sm"><div className="flex items-center gap-2 font-bold text-slate-800"><div className="bg-accent/10 p-1.5 rounded-md"><PenTool className="text-accent h-5 w-5" /></div>澤物專案</div><button onClick={() => setIsSidebarOpen(true)} className="p-2 -mr-2 active:bg-slate-100 rounded-full"><Menu className="h-6 w-6 text-slate-700" /></button></header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth"><div className="max-w-7xl mx-auto">{children}</div></main>
       </div>
     </div>
   );
 };
 
-// ==========================================
-// 5. MAIN APP
-// ==========================================
+// --- App ---
 
 const App: React.FC = () => {
+  // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Data State (Managed by Firebase)
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
+
+  // View State (MOVED UP to prevent ReferenceError in useEffect)
   const [view, setView] = useState<'dashboard' | 'projects' | 'detail' | 'team'>('dashboard');
   const [previousView, setPreviousView] = useState<'dashboard' | 'projects'>('dashboard');
   const [selectedProject, setSelectedProject] = useState<DesignProject | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  
+  // Filter State (MOVED UP)
   const [projectFilter, setProjectFilter] = useState<ProjectFilterType>('ALL');
+  const [dashboardEmployeeFilter, setDashboardEmployeeFilter] = useState<string>('All');
 
+  // --- FIREBASE SYNC ---
   useEffect(() => {
     // 1. Sync Users
-    const unsubUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
+    const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       const fetchedUsers = snapshot.docs.map(doc => doc.data() as User);
+      
       if (fetchedUsers.length === 0) {
         INITIAL_USERS.forEach(async (u) => {
           await setDoc(doc(db, "users", u.id), u);
@@ -839,129 +817,399 @@ const App: React.FC = () => {
       } else {
         setUsers(fetchedUsers);
       }
-    }, (error) => {
-      console.error("Users Sync Error:", error);
     });
 
     // 2. Sync Projects
-    const unsubProjects = onSnapshot(query(projectsCollection, orderBy("lastUpdatedTimestamp", "desc")), (snapshot) => {
+    const unsubscribeProjects = onSnapshot(query(projectsCollection, orderBy("lastUpdatedTimestamp", "desc")), (snapshot) => {
       const fetchedProjects = snapshot.docs.map(doc => doc.data() as DesignProject);
       setProjects(fetchedProjects);
       setIsLoading(false);
-    }, (error) => {
-      console.error("Projects Sync Error:", error);
-      setIsLoading(false);
     });
 
-    return () => { unsubUsers(); unsubProjects(); };
+    return () => {
+      unsubscribeUsers();
+      unsubscribeProjects();
+    };
   }, []);
 
-  // --- Real-time Sync for Active Project ---
-  // If we are viewing a project, and the 'projects' list updates (e.g. from background sync),
-  // we want to update the 'selectedProject' view to reflect changes immediately.
+  // --- REAL-TIME PROJECT SYNC ---
+  // If the currently selected project is updated in the background (by another user),
+  // update the view immediately so we don't look at stale data.
   useEffect(() => {
-    if (selectedProject) {
-        const liveProject = projects.find(p => p.id === selectedProject.id);
-        // If we found the project and it has a newer timestamp (or just different reference), update it.
-        // Checking timestamp is safer to avoid unnecessary re-renders loop if reference changes but data doesn't.
-        if (liveProject && liveProject.lastUpdatedTimestamp !== selectedProject.lastUpdatedTimestamp) {
-            setSelectedProject(liveProject);
+     if (currentUser && selectedProject) {
+        const updated = projects.find(p => p.id === selectedProject.id);
+        // Only update if timestamp changed to avoid loops, though strict equality check on object might be enough
+        if (updated && updated.lastUpdatedTimestamp !== selectedProject.lastUpdatedTimestamp) {
+           setSelectedProject(updated);
         }
-    }
-  }, [projects, selectedProject]);
+     }
+  }, [projects, currentUser, selectedProject]);
 
-  const employeeNames = useMemo(() => 
-    users.filter(u => u.role === 'employee' || u.role === 'manager').map(u => u.name), 
-    [users]
-  );
+  // Derived Data
+  const employeeNames = useMemo(() => {
+     const roleOrder: Record<string, number> = { 'employee': 1, 'manager': 2, 'engineer': 3 };
+     return [...users]
+        .sort((a, b) => (roleOrder[a.role] || 9) - (roleOrder[b.role] || 9))
+        .map(u => u.name);
+  }, [users]);
 
+  // Auth Actions
   const handleLogin = (user: User) => {
     setCurrentUser(user);
-    if (user.role === 'manager' || user.role === 'engineer' || user.canViewDashboard) setView('dashboard');
-    else setView('projects');
+    if (user.role === 'manager' || user.role === 'engineer' || user.canViewDashboard) {
+      setView('dashboard');
+    } else {
+      setView('projects');
+    }
   };
-  const handleLogout = () => { setCurrentUser(null); setSelectedProject(null); setView('dashboard'); setProjectFilter('ALL'); };
-  const handleAddUser = async (u: User) => setDoc(doc(db, "users", u.id), u);
-  const handleUpdateUser = async (u: User) => { await setDoc(doc(db, "users", u.id), u); if (currentUser?.id === u.id) setCurrentUser(u); };
-  const handleDeleteUser = async (id: string) => deleteDoc(doc(db, "users", id));
-  
-  const handleSelectProject = (p: DesignProject) => { if (view === 'dashboard' || view === 'projects') setPreviousView(view); setSelectedProject(p); setView('detail'); };
-  const handleDashboardFilterClick = (type: ProjectFilterType) => { setProjectFilter(type); setPreviousView('dashboard'); setView('projects'); };
-  const handleBack = () => { setSelectedProject(null); setView(previousView); };
-  const handleTabChange = (tab: any) => { setView(tab); if (tab === 'projects') setProjectFilter('ALL'); if (tab === 'dashboard' || tab === 'team') setSelectedProject(null); };
-  
-  const handleUpdateProject = async (p: DesignProject) => { await setDoc(doc(db, "projects", p.id), p); setSelectedProject(p); };
-  const handleDeleteProject = async (id: string) => { await deleteDoc(doc(db, "projects", id)); setSelectedProject(null); setView(previousView); };
-  const handleCreateProject = async (p: DesignProject) => { await setDoc(doc(db, "projects", p.id), p); setShowNewProjectModal(false); handleSelectProject(p); };
-  
-  // --- Updated Export Function with Full History ---
-  const handleExportData = () => {
-    if (projects.length === 0) return alert("無資料");
-    
-    // Headers
-    const headers = ['案名', '客戶', '負責人', '階段', '完工日', '地址', '電話', '進度', '需求', '備註', '完整時間軸紀錄'];
-    
-    // Process Rows
-    const rows = projects.map(p => {
-        // Format History Logs
-        const historyText = (p.history || [])
-          .sort((a, b) => b.timestamp - a.timestamp) // Newest first
-          .map(h => {
-             const time = new Date(h.timestamp).toLocaleString();
-             return `[${time}] ${h.userName} (${h.action}): ${h.details}`;
-          })
-          .join('\n'); // Separate by newline
 
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setSelectedProject(null);
+    setView('dashboard');
+    setProjectFilter('ALL');
+    setDashboardEmployeeFilter('All');
+  };
+
+  // User Management Actions
+  const handleAddUser = async (newUser: User) => {
+    try {
+      await setDoc(doc(db, "users", newUser.id), newUser);
+    } catch (e) {
+      console.error("Error adding user: ", e);
+      alert("新增使用者失敗，請檢查網路連線");
+    }
+  };
+
+  const handleUpdateUser = async (updatedUser: User) => {
+    try {
+      await setDoc(doc(db, "users", updatedUser.id), updatedUser);
+      if (currentUser?.id === updatedUser.id) {
+        setCurrentUser(updatedUser);
+      }
+    } catch (e) {
+      console.error("Error updating user: ", e);
+      alert("更新使用者失敗");
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      await deleteDoc(doc(db, "users", userId));
+    } catch (e) {
+      console.error("Error deleting user: ", e);
+      alert("刪除使用者失敗");
+    }
+  };
+
+  // Project Actions
+  const handleSelectProject = (project: DesignProject) => {
+    // Remember where we came from
+    if (view === 'dashboard' || view === 'projects') {
+      setPreviousView(view);
+    }
+    setSelectedProject(project);
+    setView('detail');
+  };
+
+  // New: Handle Filter Click from Dashboard
+  const handleDashboardFilterClick = (filterType: ProjectFilterType) => {
+    setProjectFilter(filterType);
+    setPreviousView('dashboard'); // If we go back from list, go to dashboard
+    setView('projects');
+  };
+
+  const handleBack = () => {
+    setSelectedProject(null);
+    // Go back to the remembered previous view
+    setView(previousView);
+  };
+
+  const handleTabChange = (tab: 'dashboard' | 'projects' | 'team') => {
+    setView(tab);
+    if (tab === 'projects') {
+        // Reset filter when manually clicking "All Projects" tab
+        setProjectFilter('ALL');
+        setDashboardEmployeeFilter('All');
+    }
+    if (tab === 'dashboard' || tab === 'team') setSelectedProject(null);
+  };
+
+  const handleUpdateProject = async (updatedProject: DesignProject) => {
+    try {
+      await setDoc(doc(db, "projects", updatedProject.id), updatedProject);
+      setSelectedProject(updatedProject);
+    } catch (e) {
+      console.error("Error updating project: ", e);
+      alert("更新專案失敗，請檢查網路");
+    }
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      await deleteDoc(doc(db, "projects", projectId));
+      setSelectedProject(null);
+      setView(previousView);
+    } catch (e) {
+      console.error("Error deleting project: ", e);
+      alert("刪除專案失敗");
+    }
+  };
+
+  const handleCreateProject = async (newProject: DesignProject) => {
+    try {
+      await setDoc(doc(db, "projects", newProject.id), newProject);
+      setShowNewProjectModal(false);
+      handleSelectProject(newProject);
+    } catch (e) {
+      console.error("Error creating project: ", e);
+      alert("建立專案失敗");
+    }
+  };
+
+  const handleExportData = () => {
+    if (projects.length === 0) {
+        alert("目前無資料可匯出");
+        return;
+    }
+    const headers = ['案名', '客戶姓名', '負責人', '目前階段', '預計完工日', '地址', '電話', '最新進度', '客戶需求', '內部備註', '完整時間軸與日誌'];
+    const rows = projects.map(p => {
+        const formattedHistory = (p.history || []).sort((a,b) => a.timestamp - b.timestamp).map(h => `[${new Date(h.timestamp).toLocaleString()}] ${h.userName} - ${h.action}: ${h.details}`).join('\n');
         return [
-            p.projectName, 
-            p.clientName, 
-            p.assignedEmployee, 
-            p.currentStage, 
-            p.estimatedCompletionDate, 
-            p.address, 
-            p.contactPhone, 
-            `"${(p.latestProgressNotes||'').replace(/"/g,'""')}"`, 
-            `"${(p.clientRequests||'').replace(/"/g,'""')}"`, 
-            `"${(p.internalNotes||'').replace(/"/g,'""')}"`,
-            `"${historyText.replace(/"/g,'""')}"` // Add history column
+            p.projectName,
+            p.clientName,
+            p.assignedEmployee,
+            p.currentStage,
+            p.estimatedCompletionDate,
+            p.address,
+            p.contactPhone,
+            `"${(p.latestProgressNotes || '').replace(/"/g, '""')}"`,
+            `"${(p.clientRequests || '').replace(/"/g, '""')}"`,
+            `"${(p.internalNotes || '').replace(/"/g, '""')}"`,
+            `"${formattedHistory.replace(/"/g, '""')}"`
         ];
     });
-
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
-    const link = document.createElement('a'); link.href = url; link.download = `Projects_Full_${new Date().toISOString().split('T')[0]}.csv`; document.body.appendChild(link); link.click();
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `澤物專案_匯出_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  if (isLoading) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 gap-4 font-sans"><Loader2 className="w-10 h-10 text-accent animate-spin"/><p className="text-slate-500 font-bold">載入資料中...</p></div>;
-  if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
-
-  let displayProjects = (currentUser.role === 'manager' || currentUser.role === 'engineer') ? projects : projects.filter(p => p.assignedEmployee === currentUser.name);
-  if (projectFilter === 'CONSTRUCTION') displayProjects = displayProjects.filter(p => p.currentStage === ProjectStage.CONSTRUCTION);
-  else if (projectFilter === 'DESIGN_CONTACT') displayProjects = displayProjects.filter(p => p.currentStage === ProjectStage.DESIGN || p.currentStage === ProjectStage.CONTACT);
-  else if (projectFilter === 'UPCOMING') {
-    const today = new Date(); const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-    displayProjects = displayProjects.filter(p => { if (p.currentStage === ProjectStage.COMPLETED) return false; const d = new Date(p.estimatedCompletionDate); return d >= today && d <= thirtyDaysLater; });
+  // Loading Screen
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+        <Loader2 className="w-10 h-10 text-accent animate-spin" />
+        <p className="text-slate-500 font-bold">正在連線至雲端資料庫...</p>
+      </div>
+    );
   }
 
-  const getFilterName = () => { switch(projectFilter) { case 'CONSTRUCTION': return '施工中案件'; case 'DESIGN_CONTACT': return '設計/接洽中'; case 'UPCOMING': return '即將完工'; default: return '所有專案列表'; }};
+  if (!currentUser) {
+    return <LoginScreen onLogin={handleLogin} users={users} />;
+  }
+
+  // --- Filter Logic ---
+  let displayProjects = (currentUser.role === 'manager' || currentUser.role === 'engineer')
+    ? projects
+    : projects.filter(p => p.assignedEmployee === currentUser.name);
+
+  // 1. Apply Dashboard Employee Filter (If manager selected a specific person in dashboard)
+  if ((currentUser.role === 'manager' || currentUser.role === 'engineer') && dashboardEmployeeFilter !== 'All') {
+      displayProjects = displayProjects.filter(p => p.assignedEmployee === dashboardEmployeeFilter);
+  }
+
+  // 2. Apply Status Filter
+  if (projectFilter === 'CONSTRUCTION') {
+    displayProjects = displayProjects.filter(p => p.currentStage === ProjectStage.CONSTRUCTION);
+  } else if (projectFilter === 'DESIGN_CONTACT') {
+    displayProjects = displayProjects.filter(p => p.currentStage === ProjectStage.DESIGN || p.currentStage === ProjectStage.CONTACT);
+  } else if (projectFilter === 'UPCOMING') {
+     const today = new Date();
+     const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+     displayProjects = displayProjects.filter(p => {
+        if (p.currentStage === ProjectStage.COMPLETED) return false;
+        const date = new Date(p.estimatedCompletionDate);
+        return date >= today && date <= thirtyDaysLater;
+     });
+  }
+
+  const canViewDashboard = currentUser.role === 'manager' || currentUser.role === 'engineer' || currentUser.canViewDashboard;
+  const canManageTeam = currentUser.role === 'manager' || currentUser.role === 'engineer';
+
+  // Helper for filter display name
+  const getFilterName = () => {
+      let base = '';
+      if (dashboardEmployeeFilter !== 'All') base = `${dashboardEmployeeFilter} 的`;
+      switch(projectFilter) {
+          case 'CONSTRUCTION': return base + '施工中案件';
+          case 'DESIGN_CONTACT': return base + '設計/接洽中案件';
+          case 'UPCOMING': return base + '即將完工案件';
+          default: return base + '所有專案列表';
+      }
+  };
 
   return (
-    <Layout activeTab={view === 'detail' ? 'projects' : view} onTabChange={handleTabChange} currentUser={currentUser} onLogout={handleLogout} onExportData={handleExportData}>
-      {view === 'dashboard' && (currentUser.role === 'manager' || currentUser.role === 'engineer' || currentUser.canViewDashboard) && <ProjectDashboard projects={projects} onSelectProject={handleSelectProject} employeeNames={employeeNames} onFilterClick={handleDashboardFilterClick}/>}
-      {view === 'team' && (currentUser.role === 'manager' || currentUser.role === 'engineer') && <TeamManagement users={users} currentUser={currentUser} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser}/>}
+    <Layout 
+      activeTab={view === 'detail' ? 'projects' : view as 'dashboard' | 'projects' | 'team'} 
+      onTabChange={handleTabChange}
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      onExportData={handleExportData}
+    >
+      {view === 'dashboard' && canViewDashboard && (
+        <ProjectDashboard 
+          projects={projects} 
+          onSelectProject={handleSelectProject} 
+          employeeNames={employeeNames}
+          onFilterClick={handleDashboardFilterClick}
+          selectedEmployee={dashboardEmployeeFilter}
+          onEmployeeChange={setDashboardEmployeeFilter}
+        />
+      )}
+
+      {view === 'team' && canManageTeam && (
+        <TeamManagement 
+          users={users}
+          currentUser={currentUser}
+          onAddUser={handleAddUser}
+          onUpdateUser={handleUpdateUser}
+          onDeleteUser={handleDeleteUser}
+        />
+      )}
+      
       {view === 'projects' && (
-        <div className="space-y-6 animate-fade-in font-sans">
-          <div className="flex flex-col md:flex-row justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200"><div><div className="flex items-center gap-2">{projectFilter !== 'ALL' && <button onClick={() => setView('dashboard')}><ArrowLeft className="w-5 h-5 text-slate-400"/></button>}<h2 className="text-2xl font-bold text-slate-800">{(currentUser.role === 'manager' || currentUser.role === 'engineer') ? getFilterName() : '我的專案'}</h2></div><p className="text-slate-500 text-sm mt-1 font-medium">共 {displayProjects.length} 個案場</p></div><div className="flex gap-2 w-full md:w-auto">{projectFilter !== 'ALL' && <button onClick={() => setProjectFilter('ALL')} className="px-4 py-2 border rounded-lg text-slate-600 font-medium hover:bg-slate-50">清除篩選</button>}<button onClick={() => setShowNewProjectModal(true)} className="bg-accent text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md hover:bg-amber-700 transition-colors"><Plus className="w-5 h-5"/>新增案場</button></div></div>
-          {displayProjects.length === 0 ? <div className="text-center py-20 bg-white rounded-xl border-2 border-dashed border-slate-200"><p className="text-slate-400 font-medium text-lg">無符合資料</p></div> : <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">{displayProjects.map(p => <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer group flex flex-col"><div className="h-48 bg-slate-100 relative overflow-hidden"><img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/><div className="absolute top-0 inset-x-0 h-20 bg-gradient-to-b from-black/50 to-transparent"></div><div className="absolute top-3 right-3"><span className={`px-2.5 py-1 rounded-md text-xs font-bold backdrop-blur-md shadow-sm ${p.currentStage === '施工中' ? 'bg-amber-500/90 text-white' : 'bg-white/90 text-slate-800'}`}>{p.currentStage}</span></div></div><div className="p-5 flex-1 flex flex-col"><h3 className="font-bold text-lg mb-1 text-slate-800 line-clamp-1">{p.projectName}</h3><p className="text-slate-500 text-sm mb-4 font-medium">{p.assignedEmployee} | {p.clientName}</p><div className="mt-auto pt-4 border-t border-slate-100 flex justify-between text-xs text-slate-400 font-medium"><span>更新: {new Date(p.lastUpdatedTimestamp).toLocaleDateString()}</span><span className="text-accent font-bold group-hover:text-amber-700 transition-colors flex items-center gap-1">查看詳情 <ArrowRightIcon className="w-3 h-3"/></span></div></div></div>)}</div>}
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+            <div>
+               <div className="flex items-center gap-2">
+                 {/* Show Back button if filtered from Dashboard */}
+                 {projectFilter !== 'ALL' && (
+                    <button onClick={() => setView('dashboard')} className="p-1 hover:bg-slate-100 rounded-full mr-1 text-slate-400">
+                        <ArrowLeft className="w-5 h-5" />
+                    </button>
+                 )}
+                 <h2 className="text-2xl font-bold text-slate-800">
+                    {(currentUser.role === 'manager' || currentUser.role === 'engineer') 
+                        ? getFilterName() 
+                        : '我的負責案場'
+                    }
+                 </h2>
+               </div>
+              <p className="text-slate-500 text-sm mt-1 ml-1">
+                共 {displayProjects.length} 個案場
+              </p>
+            </div>
+            
+            <div className="flex gap-2 w-full md:w-auto">
+                {(projectFilter !== 'ALL' || dashboardEmployeeFilter !== 'All') && (
+                    <button 
+                        onClick={() => { setProjectFilter('ALL'); setDashboardEmployeeFilter('All'); }}
+                        className="w-full md:w-auto px-4 py-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium text-sm transition-colors"
+                    >
+                        清除篩選
+                    </button>
+                )}
+                <button 
+                onClick={() => setShowNewProjectModal(true)}
+                className="w-full md:w-auto bg-accent hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 font-medium"
+                >
+                <Plus className="w-5 h-5" />
+                新增案場
+                </button>
+            </div>
+          </div>
+
+          {displayProjects.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-xl border-2 border-dashed border-slate-200">
+              <p className="text-slate-400 mb-4 text-lg">目前沒有符合條件的案場</p>
+              {projectFilter === 'ALL' && (
+                <button 
+                    onClick={() => setShowNewProjectModal(true)}
+                    className="text-accent hover:underline font-medium"
+                >
+                    立即建立第一個案場
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {displayProjects.map(project => (
+                <div 
+                  key={project.id} 
+                  onClick={() => handleSelectProject(project)}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer group flex flex-col"
+                >
+                  <div className="h-48 bg-slate-100 overflow-hidden relative">
+                    <img src={project.imageUrl} alt={project.projectName} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                    <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-black/50 to-transparent opacity-60"></div>
+                    <div className="absolute top-3 right-3">
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-bold shadow-sm backdrop-blur-md ${
+                        project.currentStage === '施工中' ? 'bg-amber-500/90 text-white' :
+                        project.currentStage === '已完工' ? 'bg-emerald-500/90 text-white' :
+                        'bg-white/90 text-slate-800'
+                      }`}>
+                        {project.currentStage}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-5 flex-1 flex flex-col">
+                    <h3 className="font-bold text-lg text-slate-800 mb-1 line-clamp-1">{project.projectName}</h3>
+                    <p className="text-slate-500 text-sm mb-4">{project.assignedEmployee} | {project.clientName}</p>
+                    
+                    <div className="mt-auto pt-4 border-t border-slate-100 text-sm flex justify-between items-center text-slate-400">
+                      <span className="text-xs">
+                        更新: {new Date(project.lastUpdatedTimestamp).toLocaleDateString()}
+                      </span>
+                      <span className="text-accent font-medium text-xs bg-amber-50 px-2 py-1 rounded group-hover:bg-accent group-hover:text-white transition-colors">
+                        查看詳情 &rarr;
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
-      {view === 'detail' && selectedProject && <ProjectDetail project={selectedProject} currentUser={currentUser} onBack={handleBack} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} employeeNames={employeeNames}/>}
-      {showNewProjectModal && <NewProjectModal currentUser={currentUser} onClose={() => setShowNewProjectModal(false)} onSubmit={handleCreateProject} employeeNames={employeeNames}/>}
+
+      {view === 'detail' && selectedProject && (
+        <ProjectDetail 
+          project={selectedProject} 
+          currentUser={currentUser}
+          onBack={handleBack}
+          onUpdateProject={handleUpdateProject}
+          onDeleteProject={handleDeleteProject}
+          employeeNames={employeeNames}
+        />
+      )}
+
+      {showNewProjectModal && (
+        <NewProjectModal 
+          currentUser={currentUser}
+          onClose={() => setShowNewProjectModal(false)} 
+          onSubmit={handleCreateProject}
+          employeeNames={employeeNames}
+        />
+      )}
     </Layout>
   );
 };
 
 const rootElement = document.getElementById('root');
-if (!rootElement) throw new Error("Could not find root element to mount to");
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
 const root = ReactDOM.createRoot(rootElement);
-root.render(<React.StrictMode><App /></React.StrictMode>);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
