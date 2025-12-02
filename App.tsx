@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import Layout from './components/Layout';
 import ProjectDashboard from './components/SiteDashboard';
@@ -117,7 +116,8 @@ const App: React.FC = () => {
   // Project Actions
   const handleSelectProject = (project: DesignProject) => {
     if (view !== 'detail') {
-      setLastView(view); // 記住現在在哪一頁 (Dashboard 或 Projects)
+      // 這裡做一個類型斷言，因為 view 不等於 'detail' 時，它必然是 lastView 允許的類型
+      setLastView(view as 'dashboard' | 'projects' | 'team'); 
     }
     setSelectedProject(project);
     setView('detail');

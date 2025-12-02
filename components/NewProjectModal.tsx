@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DesignProject, ProjectStage, User } from '../types';
-import { X, Plus, Image as ImageIcon } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 
 interface NewProjectModalProps {
   currentUser: User;
@@ -50,7 +50,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
         lastUpdatedTimestamp: Date.now(),
         address: formData.address || '',
         contactPhone: formData.contactPhone || '',
-        imageUrl: formData.imageUrl || DEFAULT_IMAGE,
+        imageUrl: DEFAULT_IMAGE, // Always use default
         history: [
           {
             id: `h-${Date.now()}`,
@@ -114,28 +114,6 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">專案封面 URL (選填)</label>
-                <div className="relative">
-                   <input
-                      type="text"
-                      placeholder="輸入圖片網址 (可留空使用預設)"
-                      className="w-full border-slate-300 rounded-lg p-2.5 pl-10 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
-                      value={formData.imageUrl === DEFAULT_IMAGE ? '' : formData.imageUrl}
-                      onChange={e => setFormData({...formData, imageUrl: e.target.value || DEFAULT_IMAGE})}
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                       <ImageIcon className="h-5 w-5 text-slate-400" />
-                    </div>
-                </div>
-                <div className="mt-2 h-24 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
-                   <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover opacity-80" />
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column */}
-            <div className="space-y-4">
-              <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">負責員工</label>
                 {currentUser.role === 'manager' || currentUser.role === 'engineer' ? (
                    <select
@@ -156,7 +134,10 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
                   />
                 )}
               </div>
+            </div>
 
+            {/* Right Column */}
+            <div className="space-y-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">目前階段</label>
                 <select
