@@ -1,12 +1,14 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon, ListChecks } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon, ListChecks, Share, Calendar } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { GoogleGenAI, Type } from "@google/genai";
+import html2canvas from 'html2canvas';
 
 // ==========================================
 // 1. TYPES & CONSTANTS
@@ -85,6 +87,20 @@ export const DEFAULT_PROJECT_COVERS = [
   'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80',
   'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80'
 ];
+
+// --- Custom SVG Logo Component ---
+// Replaces the external image URL to prevent broken links
+const ZewuIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 100 150" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+    {/* Frame */}
+    <rect x="5" y="5" width="90" height="140" stroke="currentColor" strokeWidth="4" rx="2" />
+    
+    {/* Stylized Waves */}
+    <path d="M 5 95 C 35 85, 65 105, 95 95" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M 5 115 C 35 105, 65 125, 95 115" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M 5 135 C 35 125, 65 145, 95 135" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 // ==========================================
 // 2. FIREBASE SERVICE
@@ -190,7 +206,7 @@ const analyzeDesignIssue = async (project: DesignProject, inputContent: string):
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash', // Switched to Flash for better stability
+      model: 'gemini-2.5-flash', 
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -239,12 +255,12 @@ const LoginScreen: React.FC<{ onLogin: (user: User) => void; users: User[] }> = 
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-sans">
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center p-4 bg-slate-900 rounded-2xl mb-4 shadow-xl">
-          <PenTool className="w-10 h-10 text-accent" />
+      <div className="text-center mb-8 flex flex-col items-center">
+        <div className="bg-white p-6 rounded-2xl mb-4 shadow-xl border border-slate-100">
+           <ZewuIcon className="w-20 h-20 text-slate-800" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">澤物專案管理</h1>
-        <p className="text-slate-500 mt-2 font-medium">Interior Design Project Management</p>
+        <h1 className="text-3xl font-bold text-slate-800 tracking-[0.2em] font-serif">澤物設計</h1>
+        <p className="text-slate-500 mt-2 font-light tracking-widest text-sm">ZEWU INTERIOR DESIGN</p>
       </div>
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 max-w-md w-full">
         <h2 className="text-xl font-bold text-slate-800 mb-6 text-center">員工登入</h2>
@@ -625,6 +641,7 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<{analysis: string, suggestions: string[]} | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isExportingImage, setIsExportingImage] = useState(false);
 
   useEffect(() => setFormData(project), [project]);
   const handleInputChange = (field: keyof DesignProject, value: any) => setFormData(prev => ({ ...prev, [field]: value }));
@@ -703,12 +720,42 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
     }
   };
 
+  const handleExportImage = async () => {
+    setIsExportingImage(true);
+    try {
+      // Small delay to ensure any rendering is done
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const element = document.getElementById('project-report-template');
+      if (element) {
+        const canvas = await html2canvas(element, {
+            scale: 2, // Higher resolution
+            backgroundColor: '#ffffff',
+            useCORS: true // Allow loading images if possible
+        });
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `澤物專案進度_${project.projectName}_${new Date().toISOString().split('T')[0]}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        alert("匯出失敗：找不到報告模板");
+      }
+    } catch (error) {
+      console.error("Export Image Failed:", error);
+      alert("匯出圖片失敗，請稍後再試");
+    } finally {
+      setIsExportingImage(false);
+    }
+  };
+
   const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-3 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 outline-none font-medium transition-shadow";
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-slide-up font-sans">
       <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-md group">
-        <img src={formData.imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+        <img src={formData.imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" crossOrigin="anonymous" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
         <div className="absolute bottom-0 left-0 p-6 text-white w-full">
             <h1 className="text-3xl font-bold leading-tight">{project.projectName}</h1>
@@ -731,7 +778,18 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
             </div>
         </div>
       </div>
-      <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm"><button onClick={onBack} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 rounded-lg text-slate-600 font-bold transition-colors"><ArrowLeft className="w-4 h-4"/>返回</button><button onClick={handleSaveGeneral} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm hover:bg-emerald-700 transition-colors"><Save className="w-4 h-4"/>儲存</button></div>
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+        <button onClick={onBack} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 rounded-lg text-slate-600 font-bold transition-colors w-full sm:w-auto justify-center sm:justify-start"><ArrowLeft className="w-4 h-4"/>返回</button>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+            <button onClick={handleExportImage} disabled={isExportingImage} className="flex-1 sm:flex-none border border-slate-200 text-slate-600 px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 shadow-sm hover:bg-slate-50 transition-colors">
+                {isExportingImage ? <Loader2 className="w-4 h-4 animate-spin"/> : <Share className="w-4 h-4"/>}
+                匯出進度報告(JPG)
+            </button>
+            <button onClick={handleSaveGeneral} className="flex-1 sm:flex-none bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center justify-center gap-2 shadow-sm hover:bg-emerald-700 transition-colors">
+                <Save className="w-4 h-4"/>儲存
+            </button>
+        </div>
+      </div>
       <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200"><button onClick={() => setActiveTab('details')} className={`px-4 py-2 rounded-lg font-bold transition-all ${activeTab === 'details' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>專案執行</button><button onClick={() => setActiveTab('ai')} className={`px-4 py-2 rounded-lg font-bold flex gap-2 transition-all ${activeTab === 'ai' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500'}`}><Sparkles className="w-4 h-4"/>AI 助理</button></div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -754,6 +812,99 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-500 text-xs mb-4 uppercase tracking-wide">聯絡資訊</h3><div className="space-y-4"><div><div className="flex gap-2 mb-1.5"><Phone className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">電話</span></div><input value={formData.contactPhone} onChange={e => handleInputChange('contactPhone', e.target.value)} className={inputClass}/></div><div><div className="flex gap-2 mb-1.5"><MapPin className="w-4 h-4 text-slate-400"/><span className="text-xs font-bold text-slate-600">地址</span></div><input value={formData.address} onChange={e => handleInputChange('address', e.target.value)} className={inputClass}/></div></div></div>
         </div>
       </div>
+
+      {/* --- HIDDEN REPORT TEMPLATE (FOR EXPORT) --- */}
+      <div 
+        id="project-report-template" 
+        className="fixed -left-[9999px] top-0 bg-white p-12 text-slate-900 w-[800px] min-h-[1000px] z-[-50]"
+        style={{ fontFamily: 'Noto Sans TC, sans-serif' }}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-end border-b-4 border-slate-900 pb-6 mb-8">
+            <div>
+                <div className="flex items-center gap-4 mb-2">
+                    <ZewuIcon className="h-20 w-auto text-slate-900" />
+                    <div className="flex flex-col">
+                        <span className="text-3xl font-bold tracking-[0.2em] text-slate-900 font-serif">澤物設計</span>
+                        <span className="text-sm font-light tracking-[0.3em] text-slate-500">ZEWU INTERIOR DESIGN</span>
+                    </div>
+                </div>
+                <h1 className="text-4xl font-bold text-slate-900 mt-6">{formData.projectName}</h1>
+            </div>
+            <div className="text-right">
+                <div className="text-slate-500 font-bold mb-1">專案進度報告書</div>
+                <div className="text-sm font-mono text-slate-400">Date: {new Date().toLocaleDateString()}</div>
+            </div>
+        </div>
+
+        {/* Info Grid */}
+        <div className="grid grid-cols-2 gap-8 mb-8">
+            <div className="space-y-4">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="text-xs font-bold text-slate-400 uppercase mb-1">業主姓名</div>
+                    <div className="text-lg font-bold text-slate-900">{formData.clientName}</div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="text-xs font-bold text-slate-400 uppercase mb-1">案場地址</div>
+                    <div className="text-lg font-bold text-slate-900">{formData.address || '未填寫'}</div>
+                </div>
+            </div>
+            <div className="space-y-4">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="text-xs font-bold text-slate-400 uppercase mb-1">專案負責人</div>
+                    <div className="text-lg font-bold text-slate-900">{formData.assignedEmployee}</div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="text-xs font-bold text-slate-400 uppercase mb-1">聯絡電話</div>
+                    <div className="text-lg font-bold text-slate-900">{formData.contactPhone || '未填寫'}</div>
+                </div>
+            </div>
+        </div>
+
+        {/* Status Summary */}
+        <div className="mb-8 border border-slate-200 rounded-xl overflow-hidden">
+             <div className="bg-slate-100 px-6 py-3 border-b border-slate-200 font-bold text-slate-600 flex justify-between items-center">
+                <span>專案現況摘要</span>
+                <span className={`px-3 py-1 rounded text-sm ${
+                        formData.currentStage === '施工中' ? 'bg-amber-500 text-white' : 'bg-slate-800 text-white'
+                }`}>
+                    {formData.currentStage}
+                </span>
+             </div>
+             <div className="p-6 bg-white">
+                <p className="text-slate-800 leading-relaxed text-lg">{formData.latestProgressNotes}</p>
+                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-slate-500 font-bold">
+                    <Calendar className="w-5 h-5" />
+                    預計完工日：{formData.estimatedCompletionDate}
+                </div>
+             </div>
+        </div>
+
+        {/* Timeline */}
+        <div>
+            <h3 className="text-xl font-bold text-slate-900 mb-6 border-b border-slate-200 pb-2">施工日誌與進度紀錄</h3>
+            <div className="space-y-0 relative border-l-2 border-slate-200 ml-3">
+                {(formData.history || [])
+                  .sort((a,b) => b.timestamp - a.timestamp)
+                  .filter(h => h.action !== '更新客戶需求' && h.action !== '變更負責人') // Optional: Filter out minor edits for cleaner report
+                  .map((log, index) => (
+                    <div key={index} className="pl-8 pb-8 relative">
+                        <div className="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full bg-slate-900 border-2 border-white"></div>
+                        <div className="flex items-center gap-3 mb-1">
+                            <span className="font-mono text-sm text-slate-400">{new Date(log.timestamp).toLocaleDateString()}</span>
+                            <span className="text-sm font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-700">{log.action}</span>
+                        </div>
+                        <p className="text-slate-800 mt-1">{log.details}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-12 pt-6 border-t border-slate-200 text-center text-slate-400 text-sm">
+            本報告由 澤物設計專案管理系統 自動生成
+        </div>
+      </div>
     </div>
   );
 };
@@ -767,7 +918,7 @@ const Layout: React.FC<{ children: React.ReactNode; activeTab: string; onTabChan
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       {isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white shadow-2xl transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto lg:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
-        <div className="flex items-center justify-between p-6 border-b border-slate-800/50"><div className="flex items-center gap-3"><div className="bg-accent/10 p-2 rounded-lg"><PenTool className="text-accent h-6 w-6" /></div><div><h1 className="text-lg font-bold tracking-wide leading-none">澤物專案</h1><span className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">Management</span></div></div><button className="lg:hidden p-1 hover:bg-slate-800 rounded-md transition-colors" onClick={() => setIsSidebarOpen(false)}><X className="h-5 w-5 text-slate-400" /></button></div>
+        <div className="flex items-center justify-between p-6 border-b border-slate-800/50"><div className="flex items-center gap-3"><div className="bg-white p-1.5 rounded-lg"><ZewuIcon className="h-8 w-8 text-slate-900" /></div><div><h1 className="text-lg font-bold tracking-wide leading-none">澤物設計</h1><span className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">Management</span></div></div><button className="lg:hidden p-1 hover:bg-slate-800 rounded-md transition-colors" onClick={() => setIsSidebarOpen(false)}><X className="h-5 w-5 text-slate-400" /></button></div>
         <nav className="p-4 space-y-1.5 flex-1 overflow-y-auto flex flex-col">
           {canViewDashboard && <button onClick={() => { onTabChange('dashboard'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${activeTab === 'dashboard' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><LayoutDashboard className="h-5 w-5 mr-3" />總覽儀表板</button>}
           <button onClick={() => { onTabChange('projects'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${activeTab === 'projects' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><FolderKanban className="h-5 w-5 mr-3" />{canViewDashboard ? '所有專案列表' : '我的專案'}</button>
@@ -777,7 +928,7 @@ const Layout: React.FC<{ children: React.ReactNode; activeTab: string; onTabChan
         <div className="p-4 bg-slate-950 border-t border-slate-800/50"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className="h-9 w-9 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center font-bold text-sm text-white border-2 border-slate-800 shadow-md">{currentUser.avatarInitials}</div><div className="overflow-hidden"><p className="text-sm font-bold text-white truncate w-28">{currentUser.name}</p><p className="text-xs text-slate-500 capitalize flex items-center gap-1">{currentUser.role === 'manager' && 'Administrator'}{currentUser.role === 'engineer' && 'System Engineer'}{currentUser.role === 'employee' && 'Designer'}</p></div></div><button onClick={onLogout} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-slate-800 rounded-lg" title="登出"><LogOut className="w-5 h-5" /></button></div></div>
       </aside>
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-20 shadow-sm"><div className="flex items-center gap-2 font-bold text-slate-800"><div className="bg-accent/10 p-1.5 rounded-md"><PenTool className="text-accent h-5 w-5" /></div>澤物專案</div><button onClick={() => setIsSidebarOpen(true)} className="p-2 -mr-2 active:bg-slate-100 rounded-full"><Menu className="h-6 w-6 text-slate-700" /></button></header>
+        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-20 shadow-sm"><div className="flex items-center gap-2 font-bold text-slate-800"><div className="bg-white p-1 rounded-md border border-slate-200"><ZewuIcon className="h-8 w-8 text-slate-800" /></div>澤物設計</div><button onClick={() => setIsSidebarOpen(true)} className="p-2 -mr-2 active:bg-slate-100 rounded-full"><Menu className="h-6 w-6 text-slate-700" /></button></header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 scroll-smooth"><div className="max-w-7xl mx-auto">{children}</div></main>
       </div>
     </div>
