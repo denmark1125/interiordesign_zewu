@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { DesignProject, ProjectStage } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -17,8 +18,6 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
   const itemsPerPage = 10;
 
   // --- Filtering & Calculations ---
-  // The 'projects' prop passed here is already filtered by the App component based on Role/User.
-  // We can do additional filtering if needed, but for dashboard aggregates, we usually use the full list accessible to the user.
   
   const stageCounts = projects.reduce((acc, p) => {
     acc[p.currentStage] = (acc[p.currentStage] || 0) + 1;
@@ -81,7 +80,7 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2>
+          <h2 className="text-2xl font-bold text-[#54534d]">總覽儀表板</h2>
           <p className="text-slate-500 text-sm mt-1">
             即時案場數據與狀態追蹤
           </p>
@@ -114,7 +113,7 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
         
         {/* Pie Chart */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col">
-          <h3 className="font-bold text-slate-800 mb-6 text-lg">案場階段分佈</h3>
+          <h3 className="font-bold text-[#54534d] mb-6 text-lg">案場階段分佈</h3>
           <div className="flex-1 min-h-[250px] relative">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -146,10 +145,10 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
           </div>
         </div>
 
-        {/* All Projects List (Sorted by Time + Pagination + NEW Badge) */}
+        {/* All Projects List */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
           <div className="flex justify-between items-center mb-6">
-             <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
+             <h3 className="font-bold text-[#54534d] flex items-center gap-2 text-lg">
                 <Briefcase className="w-5 h-5 text-slate-600" />
                 所有案場列表 (依更新時間)
              </h3>
@@ -180,7 +179,7 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
                       <tr key={project.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => onSelectProject(project)}>
                         <td className="px-4 py-3.5 font-bold text-slate-800 flex items-center gap-2">
                             {isNew && (
-                                <span className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded font-black tracking-wider">NEW</span>
+                                <span className="text-red-500 text-[10px] font-bold tracking-widest ml-1 animate-pulse">NEW</span>
                             )}
                             {project.projectName}
                         </td>
@@ -219,7 +218,7 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
                         <div className="flex justify-between items-start mb-2">
                         <div className="font-bold text-slate-800 line-clamp-1 flex items-center gap-2">
                             {isNew && (
-                                <span className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded font-black tracking-wider">NEW</span>
+                                <span className="text-red-500 text-[10px] font-bold tracking-widest ml-1 animate-pulse">NEW</span>
                             )}
                             {project.projectName}
                         </div>

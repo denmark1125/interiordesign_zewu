@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { DesignProject, ProjectStage, HistoryLog, User } from '../types';
 import { CONSTRUCTION_PHASES } from '../constants';
 import { generateProjectReport, analyzeDesignIssue } from '../services/geminiService';
-import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Camera } from 'lucide-react';
+import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Camera, Clock } from 'lucide-react';
 import { storage, ref, uploadBytes, getDownloadURL } from '../services/firebase';
+import html2canvas from 'html2canvas';
 
 interface ProjectDetailProps {
   project: DesignProject;
@@ -13,6 +15,16 @@ interface ProjectDetailProps {
   onDeleteProject: (projectId: string) => void;
   employeeNames: string[];
 }
+
+// Inline ZewuIcon for the export template
+const ZewuIcon = () => (
+  <svg width="100%" height="100%" viewBox="0 0 100 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="10" y="10" width="80" height="110" stroke="currentColor" strokeWidth="3"/>
+    <path d="M10 70 C 30 70, 40 60, 90 60" stroke="currentColor" strokeWidth="2" fill="none"/>
+    <path d="M10 85 C 30 85, 50 75, 90 85" stroke="currentColor" strokeWidth="2" fill="none"/>
+    <path d="M10 100 C 40 100, 60 110, 90 100" stroke="currentColor" strokeWidth="2" fill="none"/>
+  </svg>
+);
 
 const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onBack, onUpdateProject, onDeleteProject, employeeNames }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'ai'>('details');
@@ -172,6 +184,25 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
     }
   };
 
+  const handleExportImage = async () => {
+    const el = document.getElementById('project-report-template');
+    if (el) {
+       try {
+         // Temporarily make it visible for capture (but still fixed positioned)
+         el.style.opacity = '1'; 
+         const canvas = await html2canvas(el, { scale: 2, useCORS: true });
+         const link = document.createElement('a');
+         link.download = `${project.projectName}_進度報告.jpg`;
+         link.href = canvas.toDataURL('image/jpeg', 0.95);
+         link.click();
+         el.style.opacity = '0';
+       } catch (e) {
+         console.error('Export failed', e);
+         alert('匯出圖片失敗，請重試');
+       }
+    }
+  };
+
   const sortedHistory = [...(formData.history || [])].sort((a, b) => b.timestamp - a.timestamp);
   const canDelete = currentUser.role === 'manager' || currentUser.role === 'engineer';
   const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-3 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 focus:border-accent outline-none transition-all placeholder:text-slate-400";
@@ -222,12 +253,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
          <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 font-bold flex items-center gap-2 text-sm transition-colors">
             <ArrowLeft className="w-4 h-4" /> 返回列表
          </button>
-         <button 
-          onClick={handleSaveGeneral}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg flex items-center gap-2 shadow-sm font-bold transition-all active:scale-95 text-sm"
-        >
-          <Save className="w-4 h-4" /> 儲存變更
-        </button>
+         <div className="flex gap-2">
+            <button onClick={handleExportImage} className="bg-slate-100 text-slate-700 px-3 py-2 rounded font-bold text-sm hover:bg-slate-200 flex items-center gap-2">
+                <FileText className="w-4 h-4"/> 匯出進度報告
+            </button>
+            <button 
+                onClick={handleSaveGeneral}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg flex items-center gap-2 shadow-sm font-bold transition-all active:scale-95 text-sm"
+            >
+                <Save className="w-4 h-4" /> 儲存變更
+            </button>
+         </div>
       </div>
 
       {/* Tabs */}
@@ -491,7 +527,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                  </div>
                  <div>
                     <p className="font-bold text-slate-900 text-lg">{project.assignedEmployee}</p>
-                    <p className="text-xs text-slate-500 font-medium">Lead Designer</p>
+                    <p className="text-xs text-slate-500 font-medium">Project Lead</p>
                  </div>
               </div>
               
@@ -543,6 +579,91 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
               </div>
            </div>
         </div>
+      </div>
+
+      {/* Hidden Report Template (Improved Layout) */}
+      <div id="project-report-template" className="fixed -left-[9999px] top-0 w-[794px] bg-white text-[#54534d] p-12 opacity-0 pointer-events-none">
+         {/* Header */}
+         <div className="flex justify-between items-start mb-10 border-b-4 border-[#54534d] pb-6">
+            <div className="flex items-center gap-4">
+               <div className="w-16 h-20 text-[#54534d]">
+                  <ZewuIcon/>
+               </div>
+               <div>
+                  <h1 className="text-2xl font-bold tracking-widest leading-none">澤物設計</h1>
+                  <p className="text-[10px] tracking-[0.2em] opacity-70 mt-1">ZEWU INTERIOR DESIGN</p>
+               </div>
+            </div>
+            <div className="text-right">
+               <h2 className="text-xl font-bold text-slate-400">專案進度報告書</h2>
+               <p className="font-mono text-sm mt-1 text-slate-400">Date: {new Date().toLocaleDateString()}</p>
+            </div>
+         </div>
+
+         {/* Project Title Row */}
+         <div className="mb-8">
+            <h1 className="text-4xl font-extrabold text-[#2c2c2a] tracking-tight">{project.projectName}</h1>
+         </div>
+
+         {/* Info Grid - Compact Version */}
+         <div className="grid grid-cols-2 gap-4 mb-8">
+             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <p className="text-xs font-bold text-slate-400 mb-1">業主姓名</p>
+                <p className="text-base font-bold text-[#54534d]">{project.clientName}</p>
+             </div>
+             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <p className="text-xs font-bold text-slate-400 mb-1">專案負責人</p>
+                <p className="text-base font-bold text-[#54534d]">{project.assignedEmployee}</p>
+             </div>
+             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <p className="text-xs font-bold text-slate-400 mb-1">案場地址</p>
+                <p className="text-base font-bold text-[#54534d] truncate">{project.address || '未填寫'}</p>
+             </div>
+             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <p className="text-xs font-bold text-slate-400 mb-1">聯絡電話</p>
+                <p className="text-base font-bold text-[#54534d]">{project.contactPhone || '未填寫'}</p>
+             </div>
+         </div>
+
+         {/* Status Summary */}
+         <div className="mb-8">
+             <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                <div className="bg-slate-100 px-6 py-3 border-b border-slate-200 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-600">專案現況摘要</h3>
+                    <span className="bg-[#54534d] text-white px-3 py-1 rounded text-xs font-bold">{project.currentStage}</span>
+                </div>
+                <div className="p-6">
+                    <div className="mb-4">
+                        <p className="font-bold text-lg mb-2">【最新進度】{project.latestProgressNotes}</p>
+                        {project.internalNotes && <p className="text-sm text-slate-500 mt-2">備註：{project.internalNotes}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-slate-500 border-t border-slate-200 pt-4">
+                        <div className="w-4 h-4 text-slate-400"><Clock size={16}/></div>
+                        預計完工日：<span className="font-mono font-bold text-slate-700">{project.estimatedCompletionDate}</span>
+                    </div>
+                </div>
+             </div>
+         </div>
+
+         {/* Timeline */}
+         <div>
+            <h3 className="text-xl font-bold mb-6 border-b-2 border-slate-100 pb-2">施工日誌與進度紀錄</h3>
+            <div className="space-y-0 relative">
+               <div className="absolute left-[7px] top-2 bottom-2 w-[2px] bg-slate-200"></div>
+               {project.history.filter(h=>h.field==='latestProgressNotes'||h.field==='currentStage').sort((a,b)=>b.timestamp-a.timestamp).slice(0, 8).map(h=>(
+                  <div key={h.id} className="flex gap-6 mb-6 relative">
+                     <div className="w-4 h-4 rounded-full bg-[#54534d] border-4 border-white shadow-sm z-10 flex-shrink-0 mt-1"></div>
+                     <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-1">
+                           <span className="font-mono text-slate-400 text-sm">{new Date(h.timestamp).toLocaleDateString()}</span>
+                           <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">{h.action}</span>
+                        </div>
+                        <p className="text-base text-[#54534d] leading-relaxed">{h.details}</p>
+                     </div>
+                  </div>
+               ))}
+            </div>
+         </div>
       </div>
     </div>
   );
