@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { DesignProject, ProjectStage, HistoryLog, User } from '../types';
 import { CONSTRUCTION_PHASES } from '../constants';
 import { generateProjectReport, analyzeDesignIssue } from '../services/geminiService';
-import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Camera } from 'lucide-react';
+import { storage, ref, uploadBytes, getDownloadURL } from '../services/firebase';
 
 interface ProjectDetailProps {
   project: DesignProject;
@@ -20,6 +20,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
   
   const [progressCategory, setProgressCategory] = useState<string>(CONSTRUCTION_PHASES[0]);
   const [progressDescription, setProgressDescription] = useState<string>('');
+  const [isUploading, setIsUploading] = useState(false);
 
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportResult, setReportResult] = useState<string | null>(null);
@@ -33,6 +34,34 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
 
   const handleInputChange = (field: keyof DesignProject, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Image Upload Logic (Details Page)
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+        alert("圖片大小超過 2MB 限制，請選擇較小的圖片。");
+        return;
+    }
+
+    setIsUploading(true);
+    try {
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+        const storageRef = ref(storage, `projects/covers/${Date.now()}_${sanitizedName}`);
+        
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+        
+        handleInputChange('imageUrl', downloadURL);
+        alert("封面照片已更新，請記得點擊「儲存變更」！");
+    } catch (error) {
+        console.error("Upload failed", error);
+        alert("圖片上傳失敗，請檢查網路。");
+    } finally {
+        setIsUploading(false);
+    }
   };
 
   const handleAddProgress = () => {
@@ -73,8 +102,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
     let hasChanges = false;
     const newLogs: HistoryLog[] = [];
 
+    // Only log Stage changes to history as requested
     if (formData.currentStage !== project.currentStage) {
-       if(!window.confirm(`確認將階段變更為「${formData.currentStage}」？`)) return;
        newLogs.push({
         id: `h-${Date.now()}-3`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name,
         action: '變更專案階段', details: `專案階段已正式進入：${formData.currentStage}`, field: 'currentStage', oldValue: project.currentStage, newValue: formData.currentStage
@@ -82,23 +111,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
       hasChanges = true;
     }
     
-    if (formData.clientRequests !== project.clientRequests) {
-      newLogs.push({
-        id: `h-${Date.now()}-1`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name,
-        action: '更新客戶需求', details: '修改了客戶需求項目', field: 'clientRequests', oldValue: project.clientRequests, newValue: formData.clientRequests
-      });
-      hasChanges = true;
-    }
+    // Check other fields just for detecting changes to save (without log)
+    if (formData.clientRequests !== project.clientRequests) hasChanges = true;
+    if (formData.assignedEmployee !== project.assignedEmployee) hasChanges = true;
+    if (formData.imageUrl !== project.imageUrl) hasChanges = true;
 
-    if (formData.assignedEmployee !== project.assignedEmployee) {
-       newLogs.push({
-        id: `h-${Date.now()}-4`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name,
-        action: '變更負責人', details: `負責人從 ${project.assignedEmployee} 變更為 ${formData.assignedEmployee}`, field: 'assignedEmployee', oldValue: project.assignedEmployee, newValue: formData.assignedEmployee
-      });
-      hasChanges = true;
-    }
-
-    // Check other fields
     const fieldsToCheck: (keyof DesignProject)[] = ['internalNotes', 'address', 'estimatedCompletionDate', 'contactPhone'];
     fieldsToCheck.forEach(field => {
         if (formData[field] !== project[field]) hasChanges = true;
@@ -119,6 +136,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
     alert('資料已更新');
   };
 
+  const handleDeleteHistoryLog = (logId: string) => {
+    if (!window.confirm("確定刪除這條紀錄？")) return;
+    const updatedHistory = (formData.history || []).filter(h => h.id !== logId);
+    const updatedProject = { ...formData, history: updatedHistory };
+    setFormData(updatedProject);
+    onUpdateProject(updatedProject);
+  };
+
   const handleDelete = () => {
     if (currentUser.role !== 'manager' && currentUser.role !== 'engineer') return;
     if (window.confirm(`確定永久刪除「${project.projectName}」？此操作無法復原。`)) {
@@ -126,7 +151,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
     }
   };
 
-  // AI Mocks
   const handleGenerateReport = async () => {
     setIsGeneratingReport(true);
     try {
@@ -150,14 +174,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
 
   const sortedHistory = [...(formData.history || [])].sort((a, b) => b.timestamp - a.timestamp);
   const canDelete = currentUser.role === 'manager' || currentUser.role === 'engineer';
-
-  // Common input style class - Force white background and dark text
   const inputClass = "w-full bg-white border border-slate-300 rounded-lg p-3 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 focus:border-accent outline-none transition-all placeholder:text-slate-400";
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-slide-up">
       {/* Header Image Area */}
-      <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-md group">
+      <div className="relative h-48 sm:h-64 rounded-2xl overflow-hidden shadow-md group bg-slate-200">
         <img 
           src={formData.imageUrl} 
           alt={formData.projectName} 
@@ -165,6 +187,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
         
+        {/* Upload Button Overlay */}
+        <label className="absolute top-4 right-4 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full cursor-pointer backdrop-blur-sm transition-all border border-white/20">
+            {isUploading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Camera className="w-5 h-5" />}
+            <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isUploading} />
+        </label>
+
         <div className="absolute bottom-0 left-0 p-6 text-white w-full">
            <div className="flex justify-between items-end">
              <div>
@@ -178,7 +206,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                   </div>
                 </div>
              </div>
-             {/* Stage Badge on Image */}
              <div className={`px-3 py-1 rounded-lg text-sm font-bold backdrop-blur-md border border-white/20 shadow-lg ${
                 project.currentStage === ProjectStage.CONSTRUCTION ? 'bg-amber-500/90 text-white' :
                 project.currentStage === ProjectStage.DESIGN ? 'bg-blue-500/90 text-white' :
@@ -294,7 +321,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                           absolute -left-[21px] top-1.5 w-5 h-5 rounded-full border-4 border-white shadow-sm z-10
                           ${log.field === 'currentStage' ? 'bg-purple-500' : log.field === 'latestProgressNotes' ? 'bg-accent' : 'bg-slate-300'}
                         `}></div>
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 group-hover:border-slate-200 transition-colors">
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 group-hover:border-slate-200 transition-colors relative">
+                          {canDelete && (
+                              <button 
+                                onClick={() => handleDeleteHistoryLog(log.id)}
+                                className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                title="刪除紀錄"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                          )}
                           <div className="flex justify-between items-center mb-2">
                               <span className="text-[10px] font-bold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded uppercase tracking-wide">{log.action}</span>
                               <span className="text-xs text-slate-400 font-medium">{new Date(log.timestamp).toLocaleString()}</span>
