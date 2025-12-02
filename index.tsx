@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import { LayoutDashboard, FolderKanban, Users, Download, PenTool, Menu, X, LogOut, CheckCircle, Clock, Briefcase, AlertTriangle, Filter, ChevronRight, ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Plus, User as UserIcon, Lock, ArrowRight as ArrowRightIcon, AlertCircle, UserCog, ShieldCheck, HardHat, Eye, Key, Edit2, Upload, Camera, RefreshCw, Image as ImageIcon } from 'lucide-react';
@@ -159,13 +160,18 @@ const uploadImageFile = async (file: File, projectId: string): Promise<string> =
 // 3. GEMINI SERVICE (Lazy Init for APK Safety)
 // ==========================================
 
+// Helper to get AI instance safely
+const getAIClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("API Key 未設定或環境變數讀取失敗");
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
 const generateProjectReport = async (project: DesignProject): Promise<string> => {
   try {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      alert("API Key 未設定或環境變數讀取失敗，無法使用 AI 功能。");
-      return "AI 服務目前無法使用。";
-    }
+    const ai = getAIClient();
     
     const prompt = `
     請為以下室內設計專案撰寫一份專業的週報：
@@ -190,7 +196,6 @@ const generateProjectReport = async (project: DesignProject): Promise<string> =>
     
     語氣請專業、簡潔。`;
 
-    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -198,17 +203,13 @@ const generateProjectReport = async (project: DesignProject): Promise<string> =>
     return response.text || "AI 無法生成報告內容。";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "生成週報時發生錯誤，請稍後再試。";
+    return "AI 服務暫時無法使用，請確認 API Key 設定或網路連線。";
   }
 };
 
 const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<{analysis: string, suggestions: string[]}> => {
   try {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      alert("API Key 未設定，無法使用 AI 功能。");
-      return { analysis: "無法連接 AI 服務", suggestions: [] };
-    }
+    const ai = getAIClient();
 
     const prompt = `
     針對以下室內設計專案問題進行分析與建議：
@@ -216,7 +217,6 @@ const analyzeDesignIssue = async (project: DesignProject, inputContent: string):
     問題：${inputContent}
     `;
 
-    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
@@ -407,6 +407,7 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
                       <button type="button" className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-lg pointer-events-none">
                         <Upload className="w-4 h-4" /> 上傳照片
                       </button>
+                      {/* Opacity 0 file input for touch target */}
                       <input 
                         type="file" 
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
@@ -414,7 +415,7 @@ const NewProjectModal: React.FC<{ currentUser: User; onClose: () => void; onSubm
                         onChange={handleImageChange} 
                       />
                     </div>
-                    <button type="button" onClick={handleRandomCover} className="bg-white/90 text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-white transition-colors shadow-lg z-10">
+                    <button type="button" onClick={handleRandomCover} className="bg-white/90 text-slate-800 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-white transition-colors shadow-lg z-10 relative">
                        <RefreshCw className="w-4 h-4" /> 隨機產生
                     </button>
                 </div>
@@ -635,7 +636,44 @@ const ProjectDetail: React.FC<{ project: DesignProject; currentUser: User; onBac
     const updated = { ...formData, latestProgressNotes: newNote, lastUpdatedTimestamp: timestamp, history: [newLog, ...(formData.history || [])] };
     setFormData(updated); onUpdateProject(updated); setProgressDescription('');
   };
-  const handleSaveGeneral = () => { onUpdateProject({...formData, lastUpdatedTimestamp: Date.now()}); alert('已儲存'); };
+  
+  const handleSaveGeneral = () => {
+    let hasChanges = false;
+    const newLogs: HistoryLog[] = [];
+
+    // Stage Change - IMPORTANT: Removed confirm dialog for APK compatibility and better UX
+    if (formData.currentStage !== project.currentStage) {
+       newLogs.push({
+        id: `h-${Date.now()}-3`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name,
+        action: '變更專案階段', details: `專案階段已正式進入：${formData.currentStage}`, field: 'currentStage', oldValue: project.currentStage, newValue: formData.currentStage
+      });
+      hasChanges = true;
+    }
+    
+    // Other field checks
+    if (formData.clientRequests !== project.clientRequests) {
+      newLogs.push({ id: `h-${Date.now()}-1`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name, action: '更新客戶需求', details: '修改了客戶需求項目', field: 'clientRequests', oldValue: project.clientRequests, newValue: formData.clientRequests });
+      hasChanges = true;
+    }
+    if (formData.assignedEmployee !== project.assignedEmployee) {
+       newLogs.push({ id: `h-${Date.now()}-4`, timestamp: Date.now(), userId: currentUser.id, userName: currentUser.name, action: '變更負責人', details: `負責人從 ${project.assignedEmployee} 變更為 ${formData.assignedEmployee}`, field: 'assignedEmployee', oldValue: project.assignedEmployee, newValue: formData.assignedEmployee });
+      hasChanges = true;
+    }
+    const fieldsToCheck: (keyof DesignProject)[] = ['internalNotes', 'address', 'estimatedCompletionDate', 'contactPhone'];
+    fieldsToCheck.forEach(field => { if (formData[field] !== project[field]) hasChanges = true; });
+
+    if (!hasChanges) { alert("沒有偵測到資料變更"); return; }
+
+    const updatedProject = {
+      ...formData,
+      lastUpdatedTimestamp: Date.now(),
+      history: [...newLogs, ...(formData.history || [])]
+    };
+
+    onUpdateProject(updatedProject);
+    alert('資料已更新');
+  };
+
   const handleDelete = () => { if (window.confirm('確定刪除？')) onDeleteProject(project.id); };
   const handleGenerateReport = async () => { setIsGeneratingReport(true); const report = await generateProjectReport(formData); setReportResult(report); setIsGeneratingReport(false); };
   const handleAnalyzeIssue = async () => { if (!issueInput.trim()) return; setIsAnalyzing(true); const res = await analyzeDesignIssue(formData, issueInput); setAnalysisResult(res); setIsAnalyzing(false); };
@@ -786,6 +824,20 @@ const App: React.FC = () => {
 
     return () => { unsubUsers(); unsubProjects(); };
   }, []);
+
+  // --- Real-time Sync for Active Project ---
+  // If we are viewing a project, and the 'projects' list updates (e.g. from background sync),
+  // we want to update the 'selectedProject' view to reflect changes immediately.
+  useEffect(() => {
+    if (selectedProject) {
+        const liveProject = projects.find(p => p.id === selectedProject.id);
+        // If we found the project and it has a newer timestamp (or just different reference), update it.
+        // Checking timestamp is safer to avoid unnecessary re-renders loop if reference changes but data doesn't.
+        if (liveProject && liveProject.lastUpdatedTimestamp !== selectedProject.lastUpdatedTimestamp) {
+            setSelectedProject(liveProject);
+        }
+    }
+  }, [projects, selectedProject]);
 
   const employeeNames = useMemo(() => users.filter(u => u.role === 'employee').map(u => u.name), [users]);
 
