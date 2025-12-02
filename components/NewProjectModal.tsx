@@ -1,9 +1,6 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { DesignProject, ProjectStage, User } from '../types';
-import { DEFAULT_PROJECT_COVERS, validateImageFile } from '../constants';
-import { X, Plus, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
-import { storage, ref, uploadBytes, getDownloadURL } from '../services/firebase';
+import { X, Plus, Image as ImageIcon } from 'lucide-react';
 
 interface NewProjectModalProps {
   currentUser: User;
@@ -13,15 +10,8 @@ interface NewProjectModalProps {
 }
 
 const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose, onSubmit, employeeNames }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  // Pick a random image on mount
-  const [randomCover] = useState(() => 
-    DEFAULT_PROJECT_COVERS[Math.floor(Math.random() * DEFAULT_PROJECT_COVERS.length)]
-  );
+  // Default placeholder image
+  const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1600607686527-6fb886090705?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80';
 
   const [formData, setFormData] = useState<Partial<DesignProject>>({
     projectName: '',
@@ -34,26 +24,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
     internalNotes: '',
     address: '',
     contactPhone: '',
-    imageUrl: randomCover, // Use random cover by default
+    imageUrl: DEFAULT_IMAGE,
   });
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      
-      // Validate Image
-      const isValid = await validateImageFile(file);
-      if (!isValid) {
-        if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
-        return;
-      }
-
-      setSelectedFile(file);
-      // Create local preview
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,19 +34,9 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
       return;
     }
 
-    setIsUploading(true);
-
     try {
       const projectId = `P${Date.now().toString().slice(-4)}`;
-      let finalImageUrl = formData.imageUrl!;
-
-      // Upload Image if selected
-      if (selectedFile) {
-        const storageRef = ref(storage, `project-images/${projectId}/${selectedFile.name}`);
-        await uploadBytes(storageRef, selectedFile);
-        finalImageUrl = await getDownloadURL(storageRef);
-      }
-
+      
       const newProject: DesignProject = {
         id: projectId,
         projectName: formData.projectName!,
@@ -88,7 +50,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
         lastUpdatedTimestamp: Date.now(),
         address: formData.address || '',
         contactPhone: formData.contactPhone || '',
-        imageUrl: finalImageUrl,
+        imageUrl: formData.imageUrl || DEFAULT_IMAGE,
         history: [
           {
             id: `h-${Date.now()}`,
@@ -104,8 +66,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
       onSubmit(newProject);
     } catch (error) {
       console.error("Error creating project:", error);
-      alert("建立專案失敗，請檢查網路連線");
-      setIsUploading(false);
+      alert("建立專案失敗");
     }
   };
 
@@ -153,40 +114,22 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">專案封面/渲染圖</label>
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="relative w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-accent hover:bg-slate-50 transition-colors flex flex-col items-center justify-center overflow-hidden group"
-                >
-                  {previewUrl ? (
-                    <>
-                      <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-white text-xs font-bold flex items-center gap-1">
-                          <Upload className="w-4 h-4" /> 更換圖片
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <img src={formData.imageUrl} alt="Random Default" className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                      <div className="absolute inset-0 bg-white/60"></div>
-                      <div className="relative text-center p-4 z-10">
-                        <ImageIcon className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                        <p className="text-xs text-slate-700 font-bold">點擊上傳自訂圖片</p>
-                        <p className="text-[10px] text-slate-500 mt-1">若未上傳，將使用此隨機圖片</p>
-                      </div>
-                    </>
-                  )}
-                  <input 
-                    type="file" 
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    accept="image/*"
-                    className="hidden" 
-                  />
+                <label className="block text-sm font-bold text-slate-700 mb-1">專案封面 URL (選填)</label>
+                <div className="relative">
+                   <input
+                      type="text"
+                      placeholder="輸入圖片網址 (可留空使用預設)"
+                      className="w-full border-slate-300 rounded-lg p-2.5 pl-10 focus:ring-accent focus:border-accent bg-slate-50 text-slate-900"
+                      value={formData.imageUrl === DEFAULT_IMAGE ? '' : formData.imageUrl}
+                      onChange={e => setFormData({...formData, imageUrl: e.target.value || DEFAULT_IMAGE})}
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                       <ImageIcon className="h-5 w-5 text-slate-400" />
+                    </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5 ml-1">* 建議尺寸: 1MB 以下，16:9 橫式比例</p>
+                <div className="mt-2 h-24 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
+                   <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover opacity-80" />
+                </div>
               </div>
             </div>
 
@@ -277,24 +220,15 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
             <button
               type="button"
               onClick={onClose}
-              disabled={isUploading}
-              className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 font-medium transition-colors disabled:opacity-50"
+              className="px-5 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 font-medium transition-colors"
             >
               取消
             </button>
             <button
               type="submit"
-              disabled={isUploading}
-              className="px-5 py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-amber-700 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+              className="px-5 py-2.5 rounded-lg bg-accent text-white font-medium hover:bg-amber-700 shadow-md shadow-amber-500/20 transition-all transform active:scale-95 flex items-center gap-2"
             >
-              {isUploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  上傳建立中...
-                </>
-              ) : (
-                '建立案場'
-              )}
+              建立案場
             </button>
           </div>
         </form>

@@ -1,10 +1,8 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DesignProject, ProjectStage, HistoryLog, User } from '../types';
-import { CONSTRUCTION_PHASES, validateImageFile } from '../constants';
+import { CONSTRUCTION_PHASES } from '../constants';
 import { generateProjectReport, analyzeDesignIssue } from '../services/geminiService';
-import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Camera, Upload } from 'lucide-react';
-import { storage, ref, uploadBytes, getDownloadURL } from '../services/firebase';
+import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 
 interface ProjectDetailProps {
   project: DesignProject;
@@ -28,52 +26,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<{analysis: string, suggestions: string[]} | null>(null);
 
-  // Image Upload State
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-
   useEffect(() => {
     setFormData(project);
   }, [project]);
 
   const handleInputChange = (field: keyof DesignProject, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      
-      // Validate Image
-      const isValid = await validateImageFile(file);
-      if (!isValid) {
-        if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
-        return;
-      }
-
-      setIsUploadingImage(true);
-
-      try {
-        const storageRef = ref(storage, `project-images/${project.id}/${file.name}`);
-        await uploadBytes(storageRef, file);
-        const newImageUrl = await getDownloadURL(storageRef);
-
-        const updatedProject = {
-          ...formData,
-          imageUrl: newImageUrl,
-          lastUpdatedTimestamp: Date.now()
-        };
-        
-        setFormData(updatedProject);
-        onUpdateProject(updatedProject);
-        alert("專案封面已更新！");
-      } catch (error) {
-        console.error("Upload failed", error);
-        alert("圖片上傳失敗，請重試");
-      } finally {
-        setIsUploadingImage(false);
-      }
-    }
   };
 
   const handleAddProgress = () => {
@@ -206,30 +164,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
         
-        {/* Update Image Button */}
-        <div className="absolute top-4 right-4 z-10">
-           <button 
-             onClick={() => fileInputRef.current?.click()}
-             disabled={isUploadingImage}
-             className="bg-black/40 hover:bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all border border-white/20"
-           >
-             {isUploadingImage ? <Loader2 className="w-4 h-4 animate-spin"/> : <Camera className="w-4 h-4" />}
-             {isUploadingImage ? '上傳中...' : '更換渲染圖'}
-           </button>
-           <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImageUpload} 
-              accept="image/*" 
-              className="hidden" 
-           />
-        </div>
-        
-        {/* Helper text for image specs (only visible on hover for better UI) */}
-        <div className="absolute top-14 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-            <span className="text-[10px] text-white/80 bg-black/40 px-2 py-1 rounded backdrop-blur-sm">限 1MB, 16:9</span>
-        </div>
-
         <div className="absolute bottom-0 left-0 p-6 text-white w-full">
            <div className="flex justify-between items-end">
              <div>
