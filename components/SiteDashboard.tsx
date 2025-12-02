@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { DesignProject, ProjectStage } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { AlertTriangle, CheckCircle, Clock, Briefcase, Filter, ChevronRight, ChevronLeft } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Briefcase, Filter, ChevronRight } from 'lucide-react';
 import { ProjectFilterType } from '../App';
 
 interface DashboardProps {
@@ -13,13 +13,13 @@ interface DashboardProps {
 }
 
 const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject, employeeNames, onFilterClick }) => {
-  // --- States ---
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [selectedEmployee, setSelectedEmployee] = useState<string>('All');
 
-  // --- Filtering & Calculations ---
-  
-  const stageCounts = projects.reduce((acc, p) => {
+  const filteredProjects = selectedEmployee === 'All' 
+    ? projects 
+    : projects.filter(p => p.assignedEmployee === selectedEmployee);
+
+  const stageCounts = filteredProjects.reduce((acc, p) => {
     acc[p.currentStage] = (acc[p.currentStage] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -33,61 +33,46 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
   ].filter(d => d.value > 0);
 
   const today = new Date();
-  
-  // Stats for Cards
-  const constructionCount = projects.filter(p => p.currentStage === ProjectStage.CONSTRUCTION).length;
-  const designContactCount = projects.filter(p => p.currentStage === ProjectStage.DESIGN || p.currentStage === ProjectStage.CONTACT).length;
-  
-  // Calculate upcoming (just for the stat card count)
   const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const upcomingCount = projects.filter(p => {
+  
+  const upcomingDeadlines = filteredProjects.filter(p => {
     if (p.currentStage === ProjectStage.COMPLETED) return false;
     const date = new Date(p.estimatedCompletionDate);
     return date >= today && date <= thirtyDaysLater;
-  }).length;
+  }).sort((a, b) => new Date(a.estimatedCompletionDate).getTime() - new Date(b.estimatedCompletionDate).getTime());
 
   const stats = [
-    { label: '負責案場總數', value: projects.length, icon: Briefcase, color: 'bg-slate-100 text-slate-600', ring: 'ring-slate-50', filterType: 'ALL' as ProjectFilterType },
-    { label: '施工中案場', value: constructionCount, icon: AlertTriangle, color: 'bg-amber-100 text-amber-600', ring: 'ring-amber-50', filterType: 'CONSTRUCTION' as ProjectFilterType },
-    { label: '設計/接洽中', value: designContactCount, icon: Clock, color: 'bg-blue-100 text-blue-600', ring: 'ring-blue-50', filterType: 'DESIGN_CONTACT' as ProjectFilterType },
-    { label: '即將完工 (30天內)', value: upcomingCount, icon: CheckCircle, color: 'bg-purple-100 text-purple-600', ring: 'ring-purple-50', filterType: 'UPCOMING' as ProjectFilterType },
+    { label: '負責案場總數', value: filteredProjects.length, icon: Briefcase, color: 'bg-slate-100 text-slate-600', ring: 'ring-slate-50', filterType: 'ALL' as ProjectFilterType },
+    { label: '施工中案場', value: stageCounts[ProjectStage.CONSTRUCTION] || 0, icon: AlertTriangle, color: 'bg-amber-100 text-amber-600', ring: 'ring-amber-50', filterType: 'CONSTRUCTION' as ProjectFilterType },
+    { label: '設計/接洽中', value: (stageCounts[ProjectStage.DESIGN] || 0) + (stageCounts[ProjectStage.CONTACT] || 0), icon: Clock, color: 'bg-blue-100 text-blue-600', ring: 'ring-blue-50', filterType: 'DESIGN_CONTACT' as ProjectFilterType },
+    { label: '即將完工 (30天內)', value: upcomingDeadlines.length, icon: CheckCircle, color: 'bg-purple-100 text-purple-600', ring: 'ring-purple-50', filterType: 'UPCOMING' as ProjectFilterType },
   ];
-
-  // --- List Logic (Sorted by Time + Pagination + NEW Badge) ---
-  
-  // 1. Sort by Last Updated (Desc)
-  const sortedProjects = [...projects].sort((a, b) => b.lastUpdatedTimestamp - a.lastUpdatedTimestamp);
-
-  // 2. Pagination
-  const totalPages = Math.ceil(sortedProjects.length / itemsPerPage);
-  const paginatedProjects = sortedProjects.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  const handlePrevPage = () => setCurrentPage(p => Math.max(1, p - 1));
-  const handleNextPage = () => setCurrentPage(p => Math.min(totalPages, p + 1));
-
-  // 3. NEW Badge Helper
-  const isUpdatedToday = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.getDate() === today.getDate() &&
-           date.getMonth() === today.getMonth() &&
-           date.getFullYear() === today.getFullYear();
-  };
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-[#54534d]">總覽儀表板</h2>
+          <h2 className="text-2xl font-bold text-slate-800">總覽儀表板</h2>
           <p className="text-slate-500 text-sm mt-1">
-            即時案場數據與狀態追蹤
+            {selectedEmployee === 'All' ? '全公司案場即時數據' : `${selectedEmployee} 的案場數據`}
           </p>
+        </div>
+        
+        <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm w-full md:w-auto">
+          <Filter className="w-4 h-4 text-slate-400 ml-2" />
+          <select 
+            className="bg-transparent border-none text-sm font-bold focus:ring-0 text-slate-700 w-full md:w-auto"
+            value={selectedEmployee}
+            onChange={(e) => setSelectedEmployee(e.target.value)}
+          >
+            <option value="All">顯示全部員工</option>
+            {employeeNames.map(emp => (
+              <option key={emp} value={emp}>{emp}</option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, idx) => (
           <button 
@@ -113,7 +98,7 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
         
         {/* Pie Chart */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col">
-          <h3 className="font-bold text-[#54534d] mb-6 text-lg">案場階段分佈</h3>
+          <h3 className="font-bold text-slate-800 mb-6 text-lg">案場階段分佈</h3>
           <div className="flex-1 min-h-[250px] relative">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -145,17 +130,12 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
           </div>
         </div>
 
-        {/* All Projects List */}
+        {/* Upcoming Deadline List */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
-          <div className="flex justify-between items-center mb-6">
-             <h3 className="font-bold text-[#54534d] flex items-center gap-2 text-lg">
-                <Briefcase className="w-5 h-5 text-slate-600" />
-                所有案場列表 (依更新時間)
-             </h3>
-             <span className="text-xs text-slate-400 font-mono">
-                第 {currentPage} / {totalPages || 1} 頁
-             </span>
-          </div>
+          <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2 text-lg">
+            <Clock className="w-5 h-5 text-amber-500" />
+            即將完工 & 重點追蹤
+          </h3>
           
           <div className="flex-1 overflow-auto">
              {/* Desktop Table View */}
@@ -165,103 +145,62 @@ const ProjectDashboard: React.FC<DashboardProps> = ({ projects, onSelectProject,
                   <th className="px-4 py-3 rounded-l-lg font-bold">案名</th>
                   <th className="px-4 py-3 font-bold">負責人</th>
                   <th className="px-4 py-3 font-bold">階段</th>
-                  <th className="px-4 py-3 font-bold">最後更新</th>
+                  <th className="px-4 py-3 font-bold">預計完工</th>
                   <th className="px-4 py-3 rounded-r-lg"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {paginatedProjects.length === 0 ? (
-                   <tr><td colSpan={5} className="text-center py-10 text-slate-400">目前無專案資料</td></tr>
+                {upcomingDeadlines.length === 0 ? (
+                   <tr><td colSpan={5} className="text-center py-10 text-slate-400">目前無 30 天內需完工的案場</td></tr>
                 ) : (
-                  paginatedProjects.map(project => {
-                    const isNew = isUpdatedToday(project.lastUpdatedTimestamp);
-                    return (
-                      <tr key={project.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => onSelectProject(project)}>
-                        <td className="px-4 py-3.5 font-bold text-slate-800 flex items-center gap-2">
-                            {isNew && (
-                                <span className="text-red-500 text-[10px] font-bold tracking-widest ml-1 animate-pulse">NEW</span>
-                            )}
-                            {project.projectName}
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-500">{project.assignedEmployee}</td>
-                        <td className="px-4 py-3.5">
-                          <span className={`px-2 py-1 rounded-md text-xs font-bold ${
-                            project.currentStage === ProjectStage.CONSTRUCTION ? 'bg-amber-100 text-amber-700' :
-                            project.currentStage === ProjectStage.DESIGN ? 'bg-blue-100 text-blue-700' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>
-                            {project.currentStage}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 font-mono text-slate-600 font-medium">
-                            {new Date(project.lastUpdatedTimestamp).toLocaleDateString()}
-                        </td>
-                        <td className="px-4 py-3.5 text-right">
-                          <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-accent transition-colors ml-auto" />
-                        </td>
-                      </tr>
-                    );
-                  })
+                  upcomingDeadlines.map(project => (
+                    <tr key={project.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => onSelectProject(project)}>
+                      <td className="px-4 py-3.5 font-bold text-slate-800">{project.projectName}</td>
+                      <td className="px-4 py-3.5 text-slate-500">{project.assignedEmployee}</td>
+                      <td className="px-4 py-3.5">
+                        <span className={`px-2 py-1 rounded-md text-xs font-bold ${
+                          project.currentStage === ProjectStage.CONSTRUCTION ? 'bg-amber-100 text-amber-700' :
+                          project.currentStage === ProjectStage.DESIGN ? 'bg-blue-100 text-blue-700' :
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {project.currentStage}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 font-mono text-slate-600 font-medium">{project.estimatedCompletionDate}</td>
+                      <td className="px-4 py-3.5 text-right">
+                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-accent transition-colors ml-auto" />
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
 
             {/* Mobile List View */}
             <div className="md:hidden space-y-3">
-              {paginatedProjects.length === 0 ? (
-                 <div className="text-center py-10 text-slate-400 text-sm">目前無專案資料</div>
+              {upcomingDeadlines.length === 0 ? (
+                 <div className="text-center py-10 text-slate-400 text-sm">目前無 30 天內需完工的案場</div>
               ) : (
-                paginatedProjects.map(project => {
-                  const isNew = isUpdatedToday(project.lastUpdatedTimestamp);
-                  return (
-                    <div key={project.id} onClick={() => onSelectProject(project)} className="p-4 rounded-xl bg-slate-50 border border-slate-100 active:bg-slate-100 active:scale-[0.98] transition-all">
-                        <div className="flex justify-between items-start mb-2">
-                        <div className="font-bold text-slate-800 line-clamp-1 flex items-center gap-2">
-                            {isNew && (
-                                <span className="text-red-500 text-[10px] font-bold tracking-widest ml-1 animate-pulse">NEW</span>
-                            )}
-                            {project.projectName}
-                        </div>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            project.currentStage === ProjectStage.CONSTRUCTION ? 'bg-amber-100 text-amber-700' :
-                            'bg-slate-200 text-slate-700'
-                            }`}>
-                            {project.currentStage}
-                        </span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs text-slate-500">
-                        <span>{project.assignedEmployee}</span>
-                        <span className="font-mono text-slate-400">更新: {new Date(project.lastUpdatedTimestamp).toLocaleDateString()}</span>
-                        </div>
+                upcomingDeadlines.map(project => (
+                  <div key={project.id} onClick={() => onSelectProject(project)} className="p-4 rounded-xl bg-slate-50 border border-slate-100 active:bg-slate-100 active:scale-[0.98] transition-all">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="font-bold text-slate-800 line-clamp-1">{project.projectName}</div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          project.currentStage === ProjectStage.CONSTRUCTION ? 'bg-amber-100 text-amber-700' :
+                          'bg-slate-200 text-slate-700'
+                        }`}>
+                          {project.currentStage}
+                      </span>
                     </div>
-                  );
-                })
+                    <div className="flex justify-between items-center text-xs text-slate-500">
+                       <span>{project.assignedEmployee}</span>
+                       <span className="font-mono text-red-500 font-medium">完工: {project.estimatedCompletionDate}</span>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
-
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-             <div className="flex items-center justify-center gap-4 mt-6 pt-4 border-t border-slate-100">
-                <button 
-                  onClick={handlePrevPage} 
-                  disabled={currentPage === 1}
-                  className="p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                >
-                   <ChevronLeft className="w-5 h-5 text-slate-600" />
-                </button>
-                <span className="text-sm font-bold text-slate-600">
-                   {currentPage}
-                </span>
-                <button 
-                  onClick={handleNextPage} 
-                  disabled={currentPage === totalPages}
-                  className="p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                >
-                   <ChevronRight className="w-5 h-5 text-slate-600" />
-                </button>
-             </div>
-          )}
         </div>
       </div>
     </div>

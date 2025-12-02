@@ -1,23 +1,9 @@
 import { DesignProject } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Hardcode the key as fallback to ensure APK functionality works
-// This solves the issue where process.env might be undefined on mobile devices
-const API_KEY = process.env.API_KEY || "AIzaSyD5y1wnTV3bsZ85Dg-PO3TGcHWADQem7Rk";
-
-let aiClient: GoogleGenAI | null = null;
-
-// Lazy initialization function
-// This ensures we don't crash the app on startup if the key is missing
-const getAIClient = (): GoogleGenAI => {
-  if (!aiClient) {
-    if (!API_KEY) {
-      throw new Error("API Key is missing");
-    }
-    aiClient = new GoogleGenAI({ apiKey: API_KEY });
-  }
-  return aiClient;
-};
+// Initialize Google GenAI client
+// The API key must be obtained exclusively from process.env.API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateProjectReport = async (project: DesignProject): Promise<string> => {
   const prompt = `
@@ -44,10 +30,7 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
   語氣請專業、簡潔。`;
 
   try {
-    // Initialize client only when this function is called
-    const ai = getAIClient();
-    
-    // Use gemini-2.5-flash for basic text tasks (Stable model)
+    // Use gemini-2.5-flash for basic text tasks
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -67,12 +50,9 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
   `;
 
   try {
-    // Initialize client only when this function is called
-    const ai = getAIClient();
-
-    // Use gemini-2.5-flash for stability (switched from pro-preview)
+    // Use gemini-3-pro-preview for complex reasoning tasks
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
