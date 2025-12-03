@@ -1,9 +1,12 @@
+
 export enum ProjectStage {
   CONTACT = '接洽中',
   DESIGN = '設計中',
   CONSTRUCTION = '施工中',
   ACCEPTANCE = '待驗收',
-  COMPLETED = '已完工'
+  COMPLETED = '已完工',
+  CLOSED_DESIGN = '已結案(純設計)',
+  CLOSED_REJECTED = '已結案(未成案)'
 }
 
 export interface HistoryLog {
@@ -16,6 +19,12 @@ export interface HistoryLog {
   field?: string;     // 改變的欄位名稱
   oldValue?: string;
   newValue?: string;
+}
+
+export interface ScheduleItem {
+  phase: string;      // 階段名稱 (e.g. 油漆工程)
+  startDate: string;  // YYYY-MM-DD
+  endDate: string;    // YYYY-MM-DD
 }
 
 export interface DesignProject {
@@ -31,12 +40,14 @@ export interface DesignProject {
   internalNotes: string;         // 備註
   
   lastUpdatedTimestamp: number;  // 最新更新時間
+  createdAt: number;             // 建立時間 (新增，用於數據分析)
   
   address: string;
   contactPhone: string;
   imageUrl: string;
 
   history: HistoryLog[];         // 修改歷史紀錄
+  schedule: ScheduleItem[];      // 工程甘特圖/時程表
 }
 
 export interface ProjectUpdateLog {
@@ -47,9 +58,17 @@ export interface ProjectUpdateLog {
 }
 
 export interface AIAnalysisResult {
-  summary: string;
+  analysis: string;
   suggestions: string[];
-  riskLevel: 'Low' | 'Medium' | 'High';
+}
+
+export interface SystemLog {
+  id: string;
+  timestamp: number;
+  version: string;    // e.g. v1.0.2
+  title: string;      // e.g. 修復照片上傳問題
+  content: string;    // e.g. 調整 Firebase 權限...
+  author: string;
 }
 
 // Auth Types

@@ -6,6 +6,8 @@ import ProjectDetail from './components/SiteDetail';
 import LoginScreen from './components/LoginScreen';
 import NewProjectModal from './components/NewProjectModal';
 import TeamManagement from './components/TeamManagement';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
+import SystemChangelog from './components/SystemChangelog';
 import { DesignProject, User, ProjectStage } from './types';
 import { INITIAL_USERS } from './constants';
 import { Plus, Loader2, ArrowLeft } from 'lucide-react';
@@ -22,6 +24,20 @@ const App: React.FC = () => {
   // Data State (Managed by Firebase)
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
+
+  // Auth Persistence Logic
+  useEffect(() => {
+    const storedUser = localStorage.getItem('zewu_user');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+      } catch (e) {
+        console.error("Failed to parse stored user", e);
+        localStorage.removeItem('zewu_user');
+      }
+    }
+  }, []);
 
   // --- FIREBASE SYNC ---
   useEffect(() => {
@@ -51,14 +67,19 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Derived Data
-  const employeeNames = useMemo(() => 
-    users.filter(u => u.role === 'employee').map(u => u.name), 
-    [users]
-  );
+  // Derived Data: Employee Names for Dropdowns
+  // Priority: Employee (Designer) > Manager > Engineer
+  const employeeNames = useMemo(() => {
+    return users
+      .sort((a, b) => {
+        const roleOrder = { 'employee': 1, 'manager': 2, 'engineer': 3 };
+        return roleOrder[a.role] - roleOrder[b.role];
+      })
+      .map(u => u.name);
+  }, [users]);
 
   // View State
-  const [view, setView] = useState<'dashboard' | 'projects' | 'detail' | 'team'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'projects' | 'detail' | 'team' | 'analytics' | 'changelog'>('dashboard');
   const [previousView, setPreviousView] = useState<'dashboard' | 'projects'>('dashboard'); // Memory for "Back" button
   const [selectedProject, setSelectedProject] = useState<DesignProject | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -69,6 +90,7 @@ const App: React.FC = () => {
   // Auth Actions
   const handleLogin = (user: User) => {
     setCurrentUser(user);
+    localStorage.setItem('zewu_user', JSON.stringify(user)); // Persist Login
     if (user.role === 'manager' || user.role === 'engineer' || user.canViewDashboard) {
       setView('dashboard');
     } else {
@@ -78,6 +100,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    localStorage.removeItem('zewu_user'); // Clear Persistence
     setSelectedProject(null);
     setView('dashboard');
     setProjectFilter('ALL');
@@ -98,6 +121,7 @@ const App: React.FC = () => {
       await setDoc(doc(db, "users", updatedUser.id), updatedUser);
       if (currentUser?.id === updatedUser.id) {
         setCurrentUser(updatedUser);
+        localStorage.setItem('zewu_user', JSON.stringify(updatedUser)); // Update Persistence
       }
     } catch (e) {
       console.error("Error updating user: ", e);
@@ -137,13 +161,13 @@ const App: React.FC = () => {
     setView(previousView);
   };
 
-  const handleTabChange = (tab: 'dashboard' | 'projects' | 'team') => {
+  const handleTabChange = (tab: 'dashboard' | 'projects' | 'team' | 'analytics' | 'changelog') => {
     setView(tab);
     if (tab === 'projects') {
         // Reset filter when manually clicking "All Projects" tab
         setProjectFilter('ALL');
     }
-    if (tab === 'dashboard' || tab === 'team') setSelectedProject(null);
+    if (tab === 'dashboard' || tab === 'team' || tab === 'analytics' || tab === 'changelog') setSelectedProject(null);
   };
 
   const handleUpdateProject = async (updatedProject: DesignProject) => {
@@ -183,7 +207,7 @@ const App: React.FC = () => {
         alert("目前無資料可匯出");
         return;
     }
-    const headers = ['案名', '客戶姓名', '負責人', '目前階段', '預計完工日', '地址', '電話', '最新進度', '客戶需求', '內部備註'];
+    const headers = ['案名', '客戶姓名', '負責人', '目前階段', '預計完工日', '地址', '電話', '最新進度', '客戶需求', '內部備註', '完整時間軸與日誌', '工程進度時程'];
     const rows = projects.map(p => [
         p.projectName,
         p.clientName,
@@ -194,7 +218,9 @@ const App: React.FC = () => {
         p.contactPhone,
         `"${(p.latestProgressNotes || '').replace(/"/g, '""')}"`,
         `"${(p.clientRequests || '').replace(/"/g, '""')}"`,
-        `"${(p.internalNotes || '').replace(/"/g, '""')}"`
+        `"${(p.internalNotes || '').replace(/"/g, '""')}"`,
+        `"${(p.history || []).map(h => `[${new Date(h.timestamp).toLocaleDateString()} ${h.userName}]: ${h.action}`).join('\n').replace(/"/g, '""')}"`,
+        `"${(p.schedule || []).map(s => `${s.phase}: ${s.startDate}~${s.endDate}`).join('\n').replace(/"/g, '""')}"`
     ]);
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -243,6 +269,10 @@ const App: React.FC = () => {
 
   const canViewDashboard = currentUser.role === 'manager' || currentUser.role === 'engineer' || currentUser.canViewDashboard;
   const canManageTeam = currentUser.role === 'manager' || currentUser.role === 'engineer';
+  
+  // Permission for Analytics: Engineer Only
+  const isEngineer = currentUser.role === 'engineer';
+  const canViewAnalytics = isEngineer; 
 
   // Helper for filter display name
   const getFilterName = () => {
@@ -256,7 +286,7 @@ const App: React.FC = () => {
 
   return (
     <Layout 
-      activeTab={view === 'detail' ? 'projects' : view as 'dashboard' | 'projects' | 'team'} 
+      activeTab={view === 'detail' ? 'projects' : view as 'dashboard' | 'projects' | 'team' | 'analytics' | 'changelog'} 
       onTabChange={handleTabChange}
       currentUser={currentUser}
       onLogout={handleLogout}
@@ -269,6 +299,14 @@ const App: React.FC = () => {
           employeeNames={employeeNames}
           onFilterClick={handleDashboardFilterClick}
         />
+      )}
+
+      {view === 'analytics' && canViewAnalytics && (
+        <AnalyticsDashboard projects={projects} />
+      )}
+
+      {view === 'changelog' && isEngineer && (
+        <SystemChangelog currentUser={currentUser} />
       )}
 
       {view === 'team' && canManageTeam && (

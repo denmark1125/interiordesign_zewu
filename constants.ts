@@ -1,3 +1,4 @@
+
 import { DesignProject, ProjectStage, User } from './types';
 
 // These are now INITIAL states, used to populate the App state on first load.
@@ -44,6 +45,7 @@ export const MOCK_PROJECTS: DesignProject[] = [
     clientRequests: '希望客廳能夠有大理石紋路的電視牆，並且需要預留掃地機器人的家。',
     internalNotes: '客戶對預算較為敏感，材質挑選需控制成本。',
     lastUpdatedTimestamp: Date.now() - 86400000 * 2,
+    createdAt: Date.now() - 86400000 * 60, // 2 months ago
     imageUrl: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     history: [
       {
@@ -65,6 +67,10 @@ export const MOCK_PROJECTS: DesignProject[] = [
         oldValue: '平面配置圖 V1 討論中',
         newValue: '平面配置圖 V2 已確認，目前正在挑選客廳主牆材質。'
       }
+    ],
+    schedule: [
+        { phase: '保護工程', startDate: '2024-06-01', endDate: '2024-06-03' },
+        { phase: '拆除工程', startDate: '2024-06-04', endDate: '2024-06-10' }
     ]
   },
   {
@@ -80,8 +86,13 @@ export const MOCK_PROJECTS: DesignProject[] = [
     clientRequests: '會議室隔音要求加強，需確認隔音棉規格。',
     internalNotes: '大樓施工規範嚴格，僅能週末進行有噪音工程。',
     lastUpdatedTimestamp: Date.now() - 3600000 * 5,
+    createdAt: Date.now() - 86400000 * 5, // 5 days ago
     imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    history: []
+    history: [],
+    schedule: [
+        { phase: '泥作工程', startDate: '2024-05-10', endDate: '2024-05-20' },
+        { phase: '水電工程', startDate: '2024-05-21', endDate: '2024-05-25' }
+    ]
   },
   {
     id: 'P003',
@@ -96,8 +107,10 @@ export const MOCK_PROJECTS: DesignProject[] = [
     clientRequests: '診間需要溫馨的色調，避免過於冷冰冰的感覺。',
     internalNotes: '競爭對手亦在報價，需強調我們的售後服務優勢。',
     lastUpdatedTimestamp: Date.now() - 86400000 * 5,
+    createdAt: Date.now() - 86400000 * 150, // 5 months ago
     imageUrl: 'https://images.unsplash.com/photo-1504198458649-3128b932f49e?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    history: []
+    history: [],
+    schedule: []
   },
   {
     id: 'P004',
@@ -112,8 +125,13 @@ export const MOCK_PROJECTS: DesignProject[] = [
     clientRequests: '小孩房的窗簾希望能換成更遮光的款式。',
     internalNotes: '尾款尚未收到，需追蹤。',
     lastUpdatedTimestamp: Date.now() - 3600000,
+    createdAt: Date.now() - 86400000 * 300, // 10 months ago
     imageUrl: 'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    history: []
+    history: [],
+    schedule: [
+        { phase: '油漆工程', startDate: '2024-05-10', endDate: '2024-05-15' },
+        { phase: '細部清潔', startDate: '2024-05-28', endDate: '2024-05-29' }
+    ]
   },
   {
     id: 'P005',
@@ -128,7 +146,9 @@ export const MOCK_PROJECTS: DesignProject[] = [
     clientRequests: '無。',
     internalNotes: '此案為範例作品，已安排攝影師下週拍攝。',
     lastUpdatedTimestamp: Date.now() - 86400000 * 30,
+    createdAt: Date.now() - 86400000 * 400, // 13 months ago
     imageUrl: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    history: []
+    history: [],
+    schedule: []
   }
 ];

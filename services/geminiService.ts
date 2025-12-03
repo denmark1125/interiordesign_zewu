@@ -1,4 +1,5 @@
-import { DesignProject } from "../types";
+
+import { DesignProject, AIAnalysisResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Google GenAI client
@@ -42,7 +43,7 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
   }
 };
 
-export const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<{analysis: string, suggestions: string[]}> => {
+export const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<AIAnalysisResult> => {
   const prompt = `
   針對以下室內設計專案問題進行分析與建議：
   專案：${project.projectName} (${project.currentStage})
@@ -71,7 +72,7 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
     });
 
     if (response.text) {
-      return JSON.parse(response.text);
+      return JSON.parse(response.text) as AIAnalysisResult;
     }
     throw new Error("Empty response from AI");
   } catch (error) {
