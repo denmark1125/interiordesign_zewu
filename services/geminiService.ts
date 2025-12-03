@@ -1,12 +1,23 @@
-
 import { DesignProject, AIAnalysisResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Google GenAI client
-// The API key must be obtained exclusively from process.env.API_KEY
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Using lazy initialization to prevent crash if key is missing at startup
+// The API key is obtained from process.env.API_KEY or a hardcoded fallback for APK/Mobile support
+const API_KEY = process.env.API_KEY || "AIzaSyD5y1wnTV3bsZ85Dg-PO3TGcHWADQem7Rk";
+
+const getAIClient = () => {
+  if (!API_KEY) {
+    console.warn("Google GenAI API Key is missing");
+    return null;
+  }
+  return new GoogleGenAI({ apiKey: API_KEY });
+};
 
 export const generateProjectReport = async (project: DesignProject): Promise<string> => {
+  const ai = getAIClient();
+  if (!ai) return "系統未設定 API Key，無法使用 AI 功能。";
+
   const prompt = `
   請為以下室內設計專案撰寫一份專業的週報：
   
@@ -44,6 +55,14 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
 };
 
 export const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<AIAnalysisResult> => {
+  const ai = getAIClient();
+  if (!ai) {
+    return {
+      analysis: "系統未設定 API Key，無法進行分析。",
+      suggestions: ["請聯繫管理員設定 AI 金鑰"]
+    };
+  }
+
   const prompt = `
   針對以下室內設計專案問題進行分析與建議：
   專案：${project.projectName} (${project.currentStage})
@@ -51,9 +70,9 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
   `;
 
   try {
-    // Use gemini-3-pro-preview for complex reasoning tasks
+    // Use gemini-2.5-flash for stability (switched from 3-pro-preview based on user preference)
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
