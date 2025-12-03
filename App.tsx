@@ -415,17 +415,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {view === 'detail' && selectedProject && (
-        <ProjectDetail 
-          project={selectedProject} 
-          currentUser={currentUser}
-          onBack={handleBack}
-          onUpdateProject={handleUpdateProject}
-          onDeleteProject={handleDeleteProject}
-          employeeNames={employeeNames}
-        />
-      )}
-
       {showNewProjectModal && (
         <NewProjectModal 
           currentUser={currentUser}
