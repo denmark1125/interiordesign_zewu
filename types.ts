@@ -82,4 +82,6 @@ export interface User {
   role: UserRole;
   avatarInitials: string;
   canViewDashboard?: boolean; // 是否允許查看儀表板 (針對 employee)
+  lastLoginAt?: number; // Last login timestamp
+  loginCount?: number; // Total login count
 }

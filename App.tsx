@@ -306,7 +306,7 @@ const App: React.FC = () => {
       )}
 
       {view === 'changelog' && isEngineer && (
-        <SystemChangelog currentUser={currentUser} />
+        <SystemChangelog currentUser={currentUser} users={users} />
       )}
 
       {view === 'team' && canManageTeam && (
@@ -319,7 +319,7 @@ const App: React.FC = () => {
         />
       )}
       
-      {view === 'projects' && (
+      {view === 'projects' && !selectedProject && (
         <div className="space-y-6 animate-fade-in">
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
@@ -413,6 +413,17 @@ const App: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {view === 'detail' && selectedProject && (
+        <ProjectDetail 
+            project={selectedProject} 
+            currentUser={currentUser} 
+            onBack={handleBack}
+            onUpdateProject={handleUpdateProject}
+            onDeleteProject={handleDeleteProject}
+            employeeNames={employeeNames}
+        />
       )}
 
       {showNewProjectModal && (

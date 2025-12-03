@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { User as UserIcon, Lock, ArrowRight, AlertCircle } from 'lucide-react';
+import { updateDoc, doc, db } from '../services/firebase';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -23,14 +24,33 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, users }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     const user = users.find(u => u.username === username);
     
     if (user && user.password === password) {
-      onLogin(user);
+      const now = Date.now();
+      const newCount = (user.loginCount || 0) + 1;
+
+      // Update Firebase (Fire and forget to not block UI)
+      try {
+        const userRef = doc(db, "users", user.id);
+        await updateDoc(userRef, {
+          lastLoginAt: now,
+          loginCount: newCount
+        });
+      } catch (err) {
+        console.error("Failed to update login logs", err);
+      }
+
+      // Update local state and proceed
+      onLogin({
+        ...user,
+        lastLoginAt: now,
+        loginCount: newCount
+      });
     } else {
       setError('帳號或密碼錯誤');
     }
