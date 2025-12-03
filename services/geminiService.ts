@@ -1,18 +1,16 @@
-
 import { DesignProject, AIAnalysisResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Google GenAI client
 // Using lazy initialization to prevent crash if key is missing at startup
-// The API key is obtained from process.env.API_KEY or a hardcoded fallback for APK/Mobile support
-const API_KEY = process.env.API_KEY || "AIzaSyD5y1wnTV3bsZ85Dg-PO3TGcHWADQem7Rk";
+// The API key is obtained from process.env.API_KEY exclusively as per guidelines.
 
 const getAIClient = () => {
-  if (!API_KEY) {
+  if (!process.env.API_KEY) {
     console.warn("Google GenAI API Key is missing");
     return null;
   }
-  return new GoogleGenAI({ apiKey: API_KEY });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export const generateProjectReport = async (project: DesignProject): Promise<string> => {

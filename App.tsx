@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Layout from './components/Layout';
 import ProjectDashboard from './components/SiteDashboard';
 import ProjectDetail from './components/SiteDetail';
@@ -16,6 +15,9 @@ import { db, usersCollection, projectsCollection, onSnapshot, setDoc, doc, delet
 // Filter Type Definition
 export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
+// Auto Logout Time: 5 minutes (in milliseconds)
+const AUTO_LOGOUT_TIME = 5 * 60 * 1000;
+
 const App: React.FC = () => {
   // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -25,7 +27,16 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
 
-  // Auth Persistence Logic
+  // Auth Actions (Defined early to be used in effects)
+  const handleLogout = useCallback(() => {
+    setCurrentUser(null);
+    localStorage.removeItem('zewu_user'); // Clear Persistence
+    setSelectedProject(null);
+    setView('dashboard');
+    setProjectFilter('ALL');
+  }, []);
+
+  // --- Auth Persistence Logic ---
   useEffect(() => {
     const storedUser = localStorage.getItem('zewu_user');
     if (storedUser) {
@@ -38,6 +49,41 @@ const App: React.FC = () => {
       }
     }
   }, []);
+
+  // --- Auto Logout Logic (Idle Detection) ---
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let logoutTimer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      if (logoutTimer) clearTimeout(logoutTimer);
+      logoutTimer = setTimeout(() => {
+        alert("因閒置超過 5 分鐘，系統已自動登出以確保安全。");
+        handleLogout();
+      }, AUTO_LOGOUT_TIME);
+    };
+
+    // Events to listen for
+    const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
+
+    // Add listeners
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    // Initial start
+    resetTimer();
+
+    // Cleanup
+    return () => {
+      if (logoutTimer) clearTimeout(logoutTimer);
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [currentUser, handleLogout]);
+
 
   // --- FIREBASE SYNC ---
   useEffect(() => {
@@ -87,7 +133,6 @@ const App: React.FC = () => {
   // Filter State
   const [projectFilter, setProjectFilter] = useState<ProjectFilterType>('ALL');
 
-  // Auth Actions
   const handleLogin = (user: User) => {
     setCurrentUser(user);
     localStorage.setItem('zewu_user', JSON.stringify(user)); // Persist Login
@@ -96,14 +141,6 @@ const App: React.FC = () => {
     } else {
       setView('projects');
     }
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('zewu_user'); // Clear Persistence
-    setSelectedProject(null);
-    setView('dashboard');
-    setProjectFilter('ALL');
   };
 
   // User Management Actions
