@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { DesignProject, ProjectStage, HistoryLog, User, ScheduleItem, AIAnalysisResult } from '../types';
 import { CONSTRUCTION_PHASES } from '../constants';
 import { generateProjectReport, analyzeDesignIssue } from '../services/geminiService';
-import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Calendar, Clock, Camera, Share, Edit3, X, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Calendar, Clock, Camera, Share, Edit3, X, ChevronLeft, ChevronRight, Eye, Plus } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { uploadImage } from '../services/firebase';
 
@@ -136,6 +136,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
   const [activeTab, setActiveTab] = useState<'details' | 'schedule' | 'ai'>('details');
   const [formData, setFormData] = useState<DesignProject>(project);
   const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+  const [newCustomPhase, setNewCustomPhase] = useState(''); // State for custom phase input
   
   const [progressCategory, setProgressCategory] = useState<string>(CONSTRUCTION_PHASES[0]);
   const [progressDescription, setProgressDescription] = useState<string>('');
@@ -178,6 +179,23 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
     newSchedule = newSchedule.filter(item => item.startDate || item.endDate);
 
     setFormData(prev => ({ ...prev, schedule: newSchedule }));
+  };
+
+  const handleAddCustomPhase = () => {
+    if (!newCustomPhase.trim()) {
+        alert("請輸入工項名稱");
+        return;
+    }
+    // Check if already exists in standard or custom
+    if (CONSTRUCTION_PHASES.includes(newCustomPhase) || (formData.schedule || []).some(s => s.phase === newCustomPhase)) {
+        alert("此工項已存在");
+        return;
+    }
+
+    // Add empty placeholder to schedule so it shows up in the list
+    const newSchedule = [...(formData.schedule || []), { phase: newCustomPhase, startDate: '', endDate: '' }];
+    setFormData(prev => ({ ...prev, schedule: newSchedule }));
+    setNewCustomPhase('');
   };
 
   const handleDeleteScheduleItem = (phase: string) => {
@@ -374,6 +392,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
       return acc;
   }, {} as Record<string, ScheduleItem[]>);
 
+  // Combine standard phases and any custom phases already in the schedule
+  const customPhases = (formData.schedule || [])
+      .map(s => s.phase)
+      .filter(p => !CONSTRUCTION_PHASES.includes(p));
+  
+  // Use a Set to ensure uniqueness just in case
+  const allDisplayPhases = [...CONSTRUCTION_PHASES, ...customPhases];
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-slide-up">
@@ -626,16 +651,18 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                          )
                     })}
 
-                    {/* Edit Mode: Show All inputs */}
-                    {isEditingSchedule && CONSTRUCTION_PHASES.map((phase) => {
+                    {/* Edit Mode: Show Standard Phases + Custom Phases */}
+                    {isEditingSchedule && allDisplayPhases.map((phase) => {
                         const item = (formData.schedule || []).find(s => s.phase === phase) || { startDate: '', endDate: '' };
                         const hasDates = item.startDate && item.endDate;
+                        const isCustom = !CONSTRUCTION_PHASES.includes(phase);
 
                         return (
                             <div key={phase} className={`rounded-xl p-4 border transition-colors ${hasDates ? 'bg-white border-accent/30 shadow-sm' : 'bg-slate-50/50 border-slate-100 opacity-70 hover:opacity-100'}`}>
                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                    <div className="w-full md:w-1/4">
+                                    <div className="w-full md:w-1/4 flex items-center gap-2">
                                         <h4 className={`font-bold ${hasDates ? 'text-slate-800' : 'text-slate-500'}`}>{phase}</h4>
+                                        {isCustom && <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">自訂</span>}
                                     </div>
                                     <div className="flex flex-1 items-center gap-2">
                                         <div className="flex-1">
@@ -655,12 +682,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                                                 onChange={(e) => handleScheduleChange(phase, 'endDate', e.target.value)}
                                             />
                                         </div>
-                                        {/* NEW: Immediate Delete Button */}
-                                        {hasDates && (
+                                        
+                                        {/* Delete Button (For Standard: Clear / For Custom: Remove) */}
+                                        {(hasDates || isCustom) && (
                                             <button 
                                                 onClick={() => handleDeleteScheduleItem(phase)}
                                                 className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                title="刪除此項目"
+                                                title={isCustom ? "移除此工項" : "清除日期"}
                                             >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
@@ -670,6 +698,29 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                             </div>
                         );
                     })}
+
+                    {/* Add Custom Phase Section */}
+                    {isEditingSchedule && (
+                        <div className="mt-4 pt-4 border-t border-slate-100">
+                             <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">新增自訂工項</h4>
+                             <div className="flex gap-2">
+                                 <input 
+                                    type="text"
+                                    value={newCustomPhase}
+                                    onChange={e => setNewCustomPhase(e.target.value)}
+                                    placeholder="例如：隱形鐵窗、智能家居系統..."
+                                    className="flex-1 bg-white border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-accent/50 outline-none"
+                                 />
+                                 <button 
+                                    onClick={handleAddCustomPhase}
+                                    disabled={!newCustomPhase.trim()}
+                                    className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                 >
+                                     <Plus className="w-4 h-4" /> 新增
+                                 </button>
+                             </div>
+                        </div>
+                    )}
                 </div>
                 
                 {isEditingSchedule && (
