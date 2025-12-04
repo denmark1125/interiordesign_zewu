@@ -1,4 +1,3 @@
-
 import { DesignProject, AIAnalysisResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -7,7 +6,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 // Added fallback key as requested to fix Vercel/APK deployment issues where env vars might fail.
 
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY || "AIzaSyD5y1wnTV3bsZ85Dg-PO3TGcHWADQem7Rk";
+  // Using the specific API Key provided by the user
+  const apiKey = process.env.API_KEY || "AIzaSyDm_nPKqrBsx2gza9VqinjgF-MUy47o7I8";
   
   if (!apiKey) {
     console.warn("Google GenAI API Key is missing");
