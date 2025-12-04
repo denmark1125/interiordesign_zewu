@@ -3,14 +3,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Google GenAI client
 // Using lazy initialization to prevent crash if key is missing at startup
-// Added fallback key as requested to fix Vercel/APK deployment issues where env vars might fail.
-
 const getAIClient = () => {
-  // Using the specific API Key provided by the user
-  const apiKey = process.env.API_KEY || "AIzaSyDm_nPKqrBsx2gza9VqinjgF-MUy47o7I8";
+  // SECURITY UPDATE: The API Key is now strictly obtained from environment variables.
+  // DO NOT hardcode the key here. Configure `API_KEY` in your Vercel/Deployment settings.
+  const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    console.warn("Google GenAI API Key is missing");
+    console.warn("Google GenAI API Key is missing. Please set the API_KEY environment variable.");
     return null;
   }
   return new GoogleGenAI({ apiKey: apiKey });
@@ -18,7 +17,7 @@ const getAIClient = () => {
 
 export const generateProjectReport = async (project: DesignProject): Promise<string> => {
   const ai = getAIClient();
-  if (!ai) return "系統未設定 API Key，無法使用 AI 功能。";
+  if (!ai) return "系統未設定 API Key (環境變數缺失)，無法使用 AI 功能。";
 
   // PRIVACY UPDATE: Removed ${project.internalNotes} from the prompt.
   // Internal notes are strictly for internal use and must not appear in client-facing reports.
