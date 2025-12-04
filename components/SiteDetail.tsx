@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { DesignProject, ProjectStage, HistoryLog, User, ScheduleItem, AIAnalysisResult } from '../types';
 import { CONSTRUCTION_PHASES } from '../constants';
 import { generateProjectReport, analyzeDesignIssue } from '../services/geminiService';
-import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Calendar, Clock, Camera, Share, Edit3, X, ChevronLeft, ChevronRight, Eye, Plus } from 'lucide-react';
+import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Calendar, Clock, Camera, Share, Edit, X, ChevronLeft, ChevronRight, Eye, Plus } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { uploadImage } from '../services/firebase';
 
@@ -604,14 +603,20 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                         </div>
                     </div>
                     <button 
-                        onClick={() => setIsEditingSchedule(!isEditingSchedule)}
+                        onClick={() => {
+                            if (isEditingSchedule) {
+                                handleSaveGeneral();
+                            } else {
+                                setIsEditingSchedule(true);
+                            }
+                        }}
                         className={`text-sm px-4 py-2 rounded-lg font-bold border flex items-center gap-2 transition-all ${
                             isEditingSchedule 
                                 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
                                 : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                         }`}
                     >
-                        {isEditingSchedule ? <CheckCircle className="w-4 h-4"/> : <Edit3 className="w-4 h-4"/>}
+                        {isEditingSchedule ? <CheckCircle className="w-4 h-4"/> : <Edit className="w-4 h-4"/>}
                         {isEditingSchedule ? '儲存並結束' : '修改排程'}
                     </button>
                 </div>

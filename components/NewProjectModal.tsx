@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { DesignProject, ProjectStage, User } from '../types';
 import { X, Plus, Loader2, RefreshCw, Upload } from 'lucide-react';
@@ -124,8 +123,8 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
   const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 focus:border-accent outline-none transition-all";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#54534d]/60 backdrop-blur-sm animate-fade-in">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-slide-up">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#54534d]/60 backdrop-blur-sm animate-fade-in overflow-x-hidden">
+        <div className="bg-white rounded-2xl shadow-2xl w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-slide-up pb-20">
             <div className="flex justify-between items-center p-6 border-b border-slate-100 sticky top-0 bg-white z-10">
                 <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                     <Plus className="w-6 h-6 text-accent" />
