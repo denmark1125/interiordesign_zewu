@@ -1016,7 +1016,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                      近期施工日誌與變更紀錄
                  </h3>
                  <div className="space-y-0 relative border-l border-slate-200 ml-3 my-4">
-                     {sortedHistory.slice(0, 10).map((log, idx) => (
+                     {sortedHistory.filter(h => h.field !== 'internalNotes').slice(0, 10).map((log, idx) => (
                         <div key={idx} className="relative pl-6 pb-6 last:pb-0">
                             <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#54534d]"></div>
                             <div className="flex justify-between items-center mb-1">

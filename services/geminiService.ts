@@ -1,22 +1,27 @@
+
 import { DesignProject, AIAnalysisResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Google GenAI client
 // Using lazy initialization to prevent crash if key is missing at startup
-// The API key is obtained from process.env.API_KEY exclusively as per guidelines.
+// Added fallback key as requested to fix Vercel/APK deployment issues where env vars might fail.
 
 const getAIClient = () => {
-  if (!process.env.API_KEY) {
+  const apiKey = process.env.API_KEY || "AIzaSyD5y1wnTV3bsZ85Dg-PO3TGcHWADQem7Rk";
+  
+  if (!apiKey) {
     console.warn("Google GenAI API Key is missing");
     return null;
   }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return new GoogleGenAI({ apiKey: apiKey });
 };
 
 export const generateProjectReport = async (project: DesignProject): Promise<string> => {
   const ai = getAIClient();
   if (!ai) return "系統未設定 API Key，無法使用 AI 功能。";
 
+  // PRIVACY UPDATE: Removed ${project.internalNotes} from the prompt.
+  // Internal notes are strictly for internal use and must not appear in client-facing reports.
   const prompt = `
   請為以下室內設計專案撰寫一份專業的週報：
   
@@ -30,15 +35,12 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
   客戶需求：
   ${project.clientRequests}
 
-  內部備註：
-  ${project.internalNotes}
-
   請包含：
   1. 本週進度摘要
   2. 下週預計事項
-  3. 注意事項 (基於客戶需求與內部備註)
+  3. 注意事項 (基於客戶需求)
   
-  語氣請專業、簡潔。`;
+  語氣請專業、簡潔，適合直接提供給業主查看。不要提及任何內部成本或敏感資訊。`;
 
   try {
     // Use gemini-2.5-flash for basic text tasks
@@ -69,7 +71,7 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
   `;
 
   try {
-    // Use gemini-2.5-flash for stability (switched from 3-pro-preview based on user preference)
+    // Use gemini-2.5-flash for stability
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
