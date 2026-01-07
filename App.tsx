@@ -12,7 +12,8 @@ import MarketingDashboard from './components/MarketingDashboard';
 import CRMManager from './components/CRMManager';
 import { DesignProject, User, ProjectStage, LineMetric, Customer } from './types';
 import { INITIAL_USERS } from './constants';
-import { Plus, Loader2 } from 'lucide-react';
+// Added MapPin to the lucide-react imports
+import { Plus, Loader2, MapPin } from 'lucide-react';
 import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy } from './services/firebase';
 
 export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
@@ -64,12 +65,14 @@ const App: React.FC = () => {
     setView('detail');
   };
 
+  // 修改：將客戶地址帶入專案地址
   const handleConvertToProject = (customer: Customer) => {
     setConversionData({
-      projectName: `${customer.name}案`,
+      projectName: `${customer.name}室內設計案`,
       clientName: customer.name,
       contactPhone: customer.phone,
-      internalNotes: customer.tags.length > 0 ? `客戶標籤：${customer.tags.join(', ')}` : ''
+      address: customer.address || '',
+      internalNotes: customer.tags && customer.tags.length > 0 ? `來源標籤：${customer.tags.join(', ')}` : ''
     });
     setShowNewProjectModal(true);
   };
@@ -98,23 +101,29 @@ const App: React.FC = () => {
       {view === 'projects' && !selectedProject && (
         <div className="space-y-6 animate-fade-in">
           <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-800">所有案場列表</h2>
-            <button onClick={() => { setConversionData(null); setShowNewProjectModal(true); }} className="bg-accent text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md active:scale-95 transition-all"><Plus className="w-5 h-5" /> 新增案場</button>
+            <h2 className="text-2xl font-bold text-slate-800">案場列表</h2>
+            <button onClick={() => { setConversionData(null); setShowNewProjectModal(true); }} className="bg-[#54534d] text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md active:scale-95 transition-all"><Plus className="w-5 h-5" /> 手動新增案場</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map(p => (
-              <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer group">
-                <div className="h-40 bg-slate-100 overflow-hidden">
-                  <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl transition-all cursor-pointer group">
+                <div className="h-48 bg-slate-100 overflow-hidden relative">
+                  <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                  <div className="absolute top-4 left-4">
+                    <span className="px-3 py-1 rounded-lg bg-white/90 backdrop-blur-sm text-[10px] font-black text-slate-800 shadow-sm uppercase tracking-widest">{p.currentStage}</span>
+                  </div>
                 </div>
-                <div className="p-4">
-                  <h3 className="font-bold text-slate-800 truncate">{p.projectName}</h3>
-                  <p className="text-slate-400 text-sm mt-1">{p.assignedEmployee}</p>
+                <div className="p-5">
+                  <h3 className="font-bold text-slate-800 text-lg truncate mb-1">{p.projectName}</h3>
+                  <div className="flex items-center gap-2 text-slate-400 text-xs">
+                    <MapPin className="w-3 h-3" />
+                    <span className="truncate">{p.address || '未填寫地址'}</span>
+                  </div>
                 </div>
               </div>
             ))}
             {projects.length === 0 && (
-              <div className="col-span-full py-20 text-center text-slate-400">目前沒有進行中的案場</div>
+              <div className="col-span-full py-20 text-center text-slate-400 font-bold">目前沒有案場資料</div>
             )}
           </div>
         </div>

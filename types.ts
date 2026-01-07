@@ -1,5 +1,5 @@
 
-// Fixed: Defined UserRole as a shared type for consistency
+// Shared UserRole type
 export type UserRole = 'manager' | 'employee' | 'engineer';
 
 export enum ProjectStage {
@@ -16,7 +16,8 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
-  lineConnectionId?: string; // 關聯到 LineConnection.lineUserId
+  address?: string; // 新增：案場地址/說明
+  lineConnectionId?: string;
   lineDisplayName?: string;
   linePictureUrl?: string;
   tags: string[];
@@ -25,7 +26,7 @@ export interface Customer {
 
 export interface LineConnection {
   id: string;
-  lineUserId: string; // U-ID
+  lineUserId: string;
   lineDisplayName: string;
   linePictureUrl?: string;
   lastMessage?: string;
@@ -37,12 +38,13 @@ export interface Reservation {
   id: string;
   customerId: string;
   customerName: string;
-  lineUserId?: string; // 重要：發送通知所需的 ID
-  dateTime: string; // ISO String
-  type: '諮詢' | '丈量' | '看圖' | '簽約';
+  lineUserId?: string;
+  dateTime: string;
+  type: '諮詢' | '丈量' | '看圖' | '簽約' | '其他'; // 預約類別
+  customTypeLabel?: string; // 當類別為「其他」時的自定義文字
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
-  immediateNotified: boolean; // 建立後是否已立即通知
-  reminded: boolean; // 是否已由 Make.com 發送前晚提醒
+  immediateNotified: boolean;
+  reminded: boolean;
   note?: string;
   createdAt: number;
 }
