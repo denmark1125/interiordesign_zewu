@@ -16,7 +16,7 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
-  UserId?: string; // 統一使用 UserId 存放 LINE U-ID
+  UserId?: string; // 對齊資料庫欄位 UserId
   lineDisplayName?: string;
   linePictureUrl?: string;
   tags: string[];
@@ -25,7 +25,7 @@ export interface Customer {
 
 export interface LineConnection {
   id: string;
-  lineUserId: string; // LINE 原始回傳的 ID
+  UserId: string; // U-ID
   lineDisplayName: string;
   linePictureUrl?: string;
   lastMessage?: string;
@@ -37,7 +37,7 @@ export interface Reservation {
   id: string;
   customerId: string;
   customerName: string;
-  UserId?: string; // 統一使用 UserId 存放 LINE U-ID
+  UserId?: string; // 對齊資料庫欄位 UserId
   dateTime: string; // ISO String
   type: '諮詢' | '丈量' | '看圖' | '簽約';
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
