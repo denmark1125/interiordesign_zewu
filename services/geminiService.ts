@@ -2,13 +2,10 @@
 import { DesignProject, AIAnalysisResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Fixed: Strictly initialized as per guidelines using process.env.API_KEY.
-// Assume process.env.API_KEY is pre-configured and accessible.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export const generateProjectReport = async (project: DesignProject): Promise<string> => {
-  // PRIVACY UPDATE: Removed ${project.internalNotes} from the prompt.
-  // Internal notes are strictly for internal use and must not appear in client-facing reports.
+  // 延遲初始化以避免啟動錯誤
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   const prompt = `
   請為以下室內設計專案撰寫一份專業的週報：
   
@@ -30,12 +27,10 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
   語氣請專業、簡潔，適合直接提供給業主查看。不要提及任何內部成本或敏感資訊。`;
 
   try {
-    // Fixed: Use 'gemini-3-flash-preview' for basic text tasks.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    // Fixed: Use .text property instead of .text() method.
     return response.text || "AI 無法生成報告內容。";
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -44,6 +39,8 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
 };
 
 export const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<AIAnalysisResult> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   const prompt = `
   針對以下室內設計專案問題進行分析與建議：
   專案：${project.projectName} (${project.currentStage})
@@ -51,7 +48,6 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
   `;
 
   try {
-    // Fixed: Use 'gemini-3-pro-preview' for complex reasoning/analysis tasks.
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
@@ -71,7 +67,6 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
       }
     });
 
-    // Fixed: Use .text property instead of .text() method.
     if (response.text) {
       return JSON.parse(response.text) as AIAnalysisResult;
     }
