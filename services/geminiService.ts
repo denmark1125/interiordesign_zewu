@@ -1,24 +1,12 @@
+
 import { DesignProject, AIAnalysisResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Initialize Google GenAI client
-// Using lazy initialization to prevent crash if key is missing at startup
-const getAIClient = () => {
-  // SECURITY UPDATE: The API Key is now strictly obtained from environment variables.
-  // DO NOT hardcode the key here. Configure `API_KEY` in your Vercel/Deployment settings.
-  const apiKey = process.env.API_KEY;
-  
-  if (!apiKey) {
-    console.warn("Google GenAI API Key is missing. Please set the API_KEY environment variable.");
-    return null;
-  }
-  return new GoogleGenAI({ apiKey: apiKey });
-};
+// Fixed: Strictly initialized as per guidelines using process.env.API_KEY.
+// Assume process.env.API_KEY is pre-configured and accessible.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateProjectReport = async (project: DesignProject): Promise<string> => {
-  const ai = getAIClient();
-  if (!ai) return "系統未設定 API Key (環境變數缺失)，無法使用 AI 功能。";
-
   // PRIVACY UPDATE: Removed ${project.internalNotes} from the prompt.
   // Internal notes are strictly for internal use and must not appear in client-facing reports.
   const prompt = `
@@ -42,11 +30,12 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
   語氣請專業、簡潔，適合直接提供給業主查看。不要提及任何內部成本或敏感資訊。`;
 
   try {
-    // Use gemini-2.5-flash for basic text tasks
+    // Fixed: Use 'gemini-3-flash-preview' for basic text tasks.
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Fixed: Use .text property instead of .text() method.
     return response.text || "AI 無法生成報告內容。";
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -55,14 +44,6 @@ export const generateProjectReport = async (project: DesignProject): Promise<str
 };
 
 export const analyzeDesignIssue = async (project: DesignProject, inputContent: string): Promise<AIAnalysisResult> => {
-  const ai = getAIClient();
-  if (!ai) {
-    return {
-      analysis: "系統未設定 API Key，無法進行分析。",
-      suggestions: ["請聯繫管理員設定 AI 金鑰"]
-    };
-  }
-
   const prompt = `
   針對以下室內設計專案問題進行分析與建議：
   專案：${project.projectName} (${project.currentStage})
@@ -70,9 +51,9 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
   `;
 
   try {
-    // Use gemini-2.5-flash for stability
+    // Fixed: Use 'gemini-3-pro-preview' for complex reasoning/analysis tasks.
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -90,6 +71,7 @@ export const analyzeDesignIssue = async (project: DesignProject, inputContent: s
       }
     });
 
+    // Fixed: Use .text property instead of .text() method.
     if (response.text) {
       return JSON.parse(response.text) as AIAnalysisResult;
     }

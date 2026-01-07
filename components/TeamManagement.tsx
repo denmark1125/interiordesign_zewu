@@ -301,7 +301,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ users, currentUser, onA
                       ) : user.canViewDashboard ? (
                         <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full flex items-center gap-1"><Eye className="w-3 h-3"/> 可看儀表板</span>
                       ) : (
-                        <span className="text-slate-400 bg-slate-50 px-2 py-1 rounded-full">僅限個人專案</span>
+                        <span className="text-slate-400 bg-slate-50 px-2 py-1 rounded-full">限制存取</span>
                       )}
                    </div>
                    

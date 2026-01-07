@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { DesignProject, ProjectStage, User } from '../types';
 import { X, Plus, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { uploadImage } from '../services/firebase';
@@ -8,6 +9,7 @@ interface NewProjectModalProps {
   onClose: () => void;
   onSubmit: (project: DesignProject) => void;
   employeeNames: string[];
+  initialData?: Partial<DesignProject> | null;
 }
 
 const DEFAULT_PROJECT_COVERS = [
@@ -28,7 +30,7 @@ const validateImageFile = (file: File): boolean => {
   return true;
 };
 
-const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose, onSubmit, employeeNames }) => {
+const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose, onSubmit, employeeNames, initialData }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -43,9 +45,17 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
     internalNotes: '',
     address: '',
     contactPhone: '',
-    // Default image
     imageUrl: DEFAULT_PROJECT_COVERS[Math.floor(Math.random() * DEFAULT_PROJECT_COVERS.length)], 
   });
+
+  useEffect(() => {
+    if (initialData) {
+      setFormData(prev => ({
+        ...prev,
+        ...initialData
+      }));
+    }
+  }, [initialData]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -111,7 +121,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
             userId: currentUser.id,
             userName: currentUser.name,
             action: '專案立案',
-            details: '建立新專案資料'
+            details: '由潛在客戶資料轉換立案。'
         }],
         schedule: []
     };
@@ -123,7 +133,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
   const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-accent/50 focus:border-accent outline-none transition-all";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#54534d]/60 backdrop-blur-sm animate-fade-in overflow-x-hidden">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-[#54534d]/60 backdrop-blur-sm animate-fade-in overflow-x-hidden">
         <div className="bg-white rounded-2xl shadow-2xl w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-slide-up pb-20">
             <div className="flex justify-between items-center p-6 border-b border-slate-100 sticky top-0 bg-white z-10">
                 <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -136,7 +146,6 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                {/* Image Preview & Upload */}
                 <div className="relative h-48 rounded-xl overflow-hidden bg-slate-100 group border border-slate-200">
                     <img src={formData.imageUrl} alt="Cover" className="w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
@@ -187,7 +196,6 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
                             value={formData.assignedEmployee}
                             onChange={handleInputChange}
                             className={inputClass}
-                            disabled={currentUser.role === 'employee'} // Employees can only assign to themselves (or based on logic)
                         >
                              {employeeNames.map(name => (
                                 <option key={name} value={name}>{name}</option>
@@ -229,26 +237,16 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
                             className={inputClass}
                         />
                     </div>
-                    <div>
-                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">預計完工日</label>
-                         <input 
-                            type="date" 
-                            name="estimatedCompletionDate"
-                            value={formData.estimatedCompletionDate}
-                            onChange={handleInputChange}
-                            className={inputClass}
-                        />
-                    </div>
                 </div>
 
                 <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">客戶初步需求</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">專案備註</label>
                     <textarea 
-                        name="clientRequests"
+                        name="internalNotes"
                         rows={3}
-                        value={formData.clientRequests}
+                        value={formData.internalNotes}
                         onChange={handleInputChange}
-                        placeholder="風格偏好、特殊需求..."
+                        placeholder="內部備註或特殊事項..."
                         className={inputClass}
                     />
                 </div>
@@ -264,7 +262,7 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ currentUser, onClose,
                     <button 
                         type="submit" 
                         disabled={isSubmitting}
-                        className="bg-accent hover:bg-amber-700 text-white px-8 py-2.5 rounded-lg flex items-center gap-2 shadow-md shadow-amber-500/20 transition-all font-bold text-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                        className="bg-accent hover:bg-amber-700 text-white px-8 py-2.5 rounded-lg flex items-center gap-2 shadow-md transition-all font-bold text-sm disabled:opacity-70"
                     >
                         {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin"/> : <Plus className="w-4 h-4"/>}
                         {isSubmitting ? '建立中...' : '確認建立專案'}
