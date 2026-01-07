@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Customer, Reservation, User, LineConnection } from '../types';
-import { Search, Clock, Link as LinkIcon, X, Loader2, Plus, ChevronRight, Bot, ChevronLeft, Trash2, Save, AlertTriangle, Zap, History, ClipboardCheck, CheckCircle2, ShieldCheck, ExternalLink, Info, Database } from 'lucide-react';
+import { Search, Clock, Link as LinkIcon, X, Loader2, Plus, ChevronRight, Bot, ChevronLeft, Trash2, Save, AlertTriangle, Zap, History, ClipboardCheck, CheckCircle2, ShieldCheck, ExternalLink, Info, Database, UserPlus } from 'lucide-react';
 import { db, lineConnectionsCollection, customersCollection, reservationsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc } from '../services/firebase';
 
 // Make.com Webhook URL
@@ -39,7 +40,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
 
   const [showResModal, setShowResModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  
+  // 綁定用的狀態
+  const [bindingLineUser, setBindingLineUser] = useState<LineConnection | null>(null);
 
+  // 監聽資料庫
   useEffect(() => {
     const unsubCustomers = onSnapshot(query(customersCollection, orderBy("createdAt", "desc")), 
       (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer)))
@@ -57,14 +62,30 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     return () => { unsubCustomers(); unsubInbox(); unsubRes(); };
   }, []);
 
-  // Fix: Added missing filteredCustomers calculation to resolve compilation error on line 244
   const filteredCustomers = useMemo(() => {
     return customers.filter(c => 
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.phone && c.phone.includes(searchTerm)) ||
-      (c.tags && c.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+      (c.phone && c.phone.includes(searchTerm))
     );
   }, [customers, searchTerm]);
+
+  const handleBind = async (lineUser: LineConnection, customer: Customer) => {
+    setIsProcessing(true);
+    try {
+      await updateDoc(doc(db, "customers", customer.id), {
+        UserId: lineUser.UserId, 
+        lineDisplayName: lineUser.lineDisplayName,
+        linePictureUrl: lineUser.linePictureUrl || ''
+      });
+      await updateDoc(doc(db, "line_connections", lineUser.id), { isBound: true });
+      setBindingLineUser(null);
+      alert(`已成功將 LINE 好友「${lineUser.lineDisplayName}」連結至客戶「${customer.name}」`);
+    } catch (e) { 
+      alert("連結失敗，請檢查網路連線"); 
+    } finally { 
+      setIsProcessing(false); 
+    }
+  };
 
   const formatForWebhook = (dateStr: string) => {
     if (!dateStr) return "";
@@ -93,7 +114,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     };
 
     setWebhookLogs(prev => [newLog, ...prev].slice(0, 50));
-
     if (!isValid) return false;
 
     try {
@@ -114,86 +134,124 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
 
   return (
     <div className="space-y-6 pb-20 max-w-5xl mx-auto animate-fade-in text-slate-800">
+      {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b border-slate-100 pb-4">
         <div>
           <h2 className="text-xl font-black tracking-tight text-slate-900">案場客戶管理</h2>
-          <p className="text-[10px] text-slate-400 font-black tracking-widest uppercase mt-1">CRM & Automatic Reservation</p>
+          <p className="text-[10px] text-slate-400 font-black tracking-widest uppercase mt-1">CRM & LINE Connection Pool</p>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 overflow-x-auto max-w-full no-scrollbar">
           {[
             { id: 'reservations', label: '預約日曆' },
             { id: 'customers', label: '客戶列表' },
-            { id: 'automation', label: '自動化發送日誌' }
+            { id: 'inbox', label: '連結中心' },
+            { id: 'automation', label: '發送日誌' }
           ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 py-2 text-xs font-black transition-all ${activeTab === tab.id ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 py-2 text-xs font-black transition-all whitespace-nowrap relative ${activeTab === tab.id ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>
               {tab.label}
+              {tab.id === 'inbox' && lineInbox.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 text-white text-[8px] items-center justify-center font-black">{lineInbox.length}</span>
+                </span>
+              )}
             </button>
           ))}
         </div>
       </div>
 
-      {activeTab === 'automation' && (
+      {/* Inbox: 連結中心 */}
+      {activeTab === 'inbox' && (
         <div className="space-y-6 animate-fade-in">
-           {/* Webhook Logs */}
            <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8">
               <div className="flex items-center gap-3 mb-8">
-                 <div className="p-2.5 bg-slate-900 rounded-xl"><Zap className="w-5 h-5 text-white" /></div>
+                 <div className="p-2.5 bg-blue-600 rounded-xl"><LinkIcon className="w-5 h-5 text-white" /></div>
                  <div>
-                    <h3 className="font-black text-slate-900">發送紀錄 (Webhook Logs)</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase mt-0.5">用於診斷 Make.com 即時接收狀況</p>
+                    <h3 className="font-black text-slate-900">待處理連結池</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">這些是剛加入 LINE 但尚未與系統客戶關聯的人員</p>
                  </div>
               </div>
-              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                 {webhookLogs.map(log => (
-                    <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                       <div className="flex justify-between items-center mb-2">
-                          <span className="text-[10px] font-black text-slate-400">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${log.status === 'sent' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-400'}`}>{log.status === 'sent' ? '已送出' : '跳過'}</span>
-                       </div>
-                       <p className="text-xs font-black text-slate-700">{log.clientName} - {log.type}</p>
-                       <p className="text-[10px] font-mono text-blue-500 mt-1 truncate">ID: {log.UserId}</p>
-                    </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 {lineInbox.map(user => (
+                   <div key={user.id} className="p-5 border border-slate-100 rounded-2xl bg-slate-50/50 flex items-center justify-between group hover:bg-white hover:shadow-md transition-all">
+                      <div className="flex items-center gap-4">
+                         <div className="w-12 h-12 rounded-2xl bg-slate-200 overflow-hidden border border-white shadow-sm">
+                            {user.linePictureUrl ? <img src={user.linePictureUrl} className="w-full h-full object-cover" /> : <Bot className="w-full h-full p-2 text-slate-400" />}
+                         </div>
+                         <div>
+                            <h4 className="font-black text-sm text-slate-800">{user.lineDisplayName}</h4>
+                            <p className="text-[10px] font-mono text-slate-400 truncate w-32">{user.UserId}</p>
+                         </div>
+                      </div>
+                      <button 
+                        onClick={() => setBindingLineUser(user)}
+                        className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black flex items-center gap-2 hover:bg-blue-600 transition-all active:scale-95"
+                      >
+                         <UserPlus className="w-3.5 h-3.5"/> 連結客戶
+                      </button>
+                   </div>
                  ))}
-                 {webhookLogs.length === 0 && <div className="py-10 text-center text-slate-300 text-xs italic">尚無即時發送紀錄</div>}
-              </div>
-           </div>
-
-           {/* Make.com 診斷建議 */}
-           <div className="bg-slate-900 rounded-[32px] p-8 text-white">
-              <div className="flex items-center gap-3 mb-6">
-                 <Database className="w-6 h-6 text-blue-400" />
-                 <h3 className="font-black">Make.com 變數引導 (Firestore 模式)</h3>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                 <div className="space-y-4">
-                    <p className="text-xs font-bold text-slate-400">如果您在 Make 裡使用「List Documents」模組，對應關係如下：</p>
-                    <div className="bg-white/10 p-4 rounded-2xl font-mono text-[11px] space-y-2">
-                       <p className="flex justify-between border-b border-white/5 pb-1"><span className="text-blue-300">Firestore 欄位</span> <span className="text-emerald-400">Make 藍色變數</span></p>
-                       <p className="flex justify-between"><span>UserId</span> <span className="text-amber-400">record.UserId</span></p>
-                       <p className="flex justify-between"><span>customerName</span> <span className="text-amber-400">record.customerName</span></p>
-                       <p className="flex justify-between"><span>dateTime</span> <span className="text-amber-400">record.dateTime</span></p>
-                       <p className="flex justify-between"><span>reminded</span> <span className="text-amber-400">record.reminded</span></p>
-                    </div>
-                    <p className="text-[10px] text-red-400 font-black flex items-start gap-2">
-                       <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                       警告：千萬不要手寫 2.fields.name，必須從 Make 的彈出選單中用滑鼠點選變數！
-                    </p>
-                 </div>
-
-                 <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4">
-                    <h4 className="text-sm font-black text-blue-400">為什麼 Run Once 才有用？</h4>
-                    <p className="text-xs text-slate-300 leading-relaxed font-bold">
-                       這代表您的 Webhook **並未開啟排程 (Scheduling)**。<br/><br/>
-                       請在 Make 編輯器左下角找到 <span className="text-emerald-400">Scheduling OFF/ON</span> 開關，將其切換為 <span className="text-emerald-400 font-black underline">ON</span>。<br/><br/>
-                       此外，LINE Flex 訊息發送失敗通常是因為「to」欄位帶入了空值。請在 Make 中加入篩選器，確保 <span className="text-blue-400">UserId 存在</span> 才發送。
-                    </p>
-                 </div>
+                 {lineInbox.length === 0 && (
+                   <div className="col-span-full py-20 text-center">
+                      <div className="bg-slate-50 w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                         <CheckCircle2 className="w-8 h-8 text-slate-200" />
+                      </div>
+                      <p className="text-slate-300 text-sm font-black">目前沒有等待連結的人員</p>
+                   </div>
+                 )}
               </div>
            </div>
         </div>
       )}
 
+      {/* Binding Modal: 選擇要綁定的客戶 */}
+      {bindingLineUser && (
+        <div className="fixed inset-0 z-[400] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+           <div className="bg-white rounded-[40px] border border-slate-200 w-full max-w-md p-10 shadow-2xl animate-slide-up relative">
+              <button onClick={() => setBindingLineUser(null)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 p-2"><X className="w-6 h-6"/></button>
+              
+              <div className="flex items-center gap-4 mb-8 pb-6 border-b border-slate-50">
+                 <img src={bindingLineUser.linePictureUrl} className="w-14 h-14 rounded-2xl border border-slate-100 shadow-sm" />
+                 <div>
+                    <h3 className="text-lg font-black text-slate-900">將好友連結至客戶</h3>
+                    <p className="text-xs font-bold text-slate-400">目前選擇：{bindingLineUser.lineDisplayName}</p>
+                 </div>
+              </div>
+
+              <div className="relative mb-6">
+                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 w-4 h-4" />
+                 <input 
+                    type="text" 
+                    placeholder="搜尋客戶姓名或電話..." 
+                    value={searchTerm} 
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className={`${inputClass} pl-12 h-12 rounded-2xl`} 
+                 />
+              </div>
+
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                 {filteredCustomers.map(c => (
+                   <button 
+                      key={c.id} 
+                      onClick={() => handleBind(bindingLineUser, c)}
+                      disabled={isProcessing}
+                      className="w-full p-4 text-left bg-slate-50 rounded-2xl font-black text-sm text-slate-700 hover:bg-slate-900 hover:text-white transition-all flex justify-between items-center group disabled:opacity-50"
+                   >
+                      <div>
+                         <p>{c.name}</p>
+                         <p className="text-[10px] opacity-50 font-mono">{c.phone}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 opacity-20 group-hover:opacity-100"/>
+                   </button>
+                 ))}
+                 {filteredCustomers.length === 0 && <p className="text-center py-10 text-slate-300 text-xs italic">找不到符合條件的客戶</p>}
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* 預約日曆介面 (保持不變) */}
       {activeTab === 'reservations' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
            <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
@@ -224,9 +282,9 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
               </div>
            </div>
            
-           <div className="bg-white rounded-3xl border border-slate-100 h-fit shadow-sm overflow-hidden flex flex-col">
+           <div className="bg-white rounded-3xl border border-slate-100 h-fit shadow-sm overflow-hidden flex flex-col min-h-[400px]">
               <div className="p-5 bg-slate-50 border-b border-slate-100 font-black text-slate-400 text-[10px] uppercase tracking-widest">本日預約行程</div>
-              <div className="p-5 space-y-4 min-h-[300px] overflow-y-auto custom-scrollbar">
+              <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar">
                  {selectedDay && getReservationsForDay(selectedDay).length > 0 ? getReservationsForDay(selectedDay).map(res => (
                    <div key={res.id} className="p-5 border border-slate-50 rounded-[24px] bg-white shadow-sm hover:shadow-md transition-all group">
                       <div className="flex justify-between items-start mb-3">
@@ -236,12 +294,13 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                       <h4 className="font-bold text-sm text-slate-900">{res.customerName}</h4>
                       <p className="text-[10px] font-black text-slate-400 flex items-center gap-1.5 mt-2"><Clock className="w-3.5 h-3.5"/> {new Date(res.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
                    </div>
-                 )) : <div className="py-20 text-center text-slate-200 text-[10px] italic font-bold">目前無任何行程</div>}
+                 )) : <div className="py-20 text-center text-slate-200 text-[10px] italic font-black">目前無任何行程</div>}
               </div>
            </div>
         </div>
       )}
 
+      {/* 客戶列表 (保持不變) */}
       {activeTab === 'customers' && (
         <div className="space-y-4 animate-fade-in">
            <div className="relative">
@@ -276,6 +335,58 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
+      {/* 自動化發送日誌 (診斷用) */}
+      {activeTab === 'automation' && (
+        <div className="space-y-6 animate-fade-in">
+           <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8">
+              <div className="flex items-center gap-3 mb-8">
+                 <div className="p-2.5 bg-slate-900 rounded-xl"><Zap className="w-5 h-5 text-white" /></div>
+                 <div>
+                    <h3 className="font-black text-slate-900">發送紀錄 (Webhook Logs)</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mt-0.5">用於診斷 Make.com 即時接收狀況</p>
+                 </div>
+              </div>
+              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                 {webhookLogs.map(log => (
+                    <div key={log.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                       <div className="flex justify-between items-center mb-2">
+                          <span className="text-[10px] font-black text-slate-400">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${log.status === 'sent' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-400'}`}>{log.status === 'sent' ? '已送出' : '跳過'}</span>
+                       </div>
+                       <p className="text-xs font-black text-slate-700">{log.clientName} - {log.type}</p>
+                       <p className="text-[10px] font-mono text-blue-500 mt-1 truncate">ID: {log.UserId}</p>
+                    </div>
+                 ))}
+                 {webhookLogs.length === 0 && <div className="py-10 text-center text-slate-300 text-xs italic">尚無即時發送紀錄</div>}
+              </div>
+           </div>
+
+           <div className="bg-slate-900 rounded-[32px] p-8 text-white">
+              <div className="flex items-center gap-3 mb-6">
+                 <Database className="w-6 h-6 text-blue-400" />
+                 <h3 className="font-black">Make.com 變數引導</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 <div className="bg-white/10 p-6 rounded-2xl border border-white/10">
+                    <h4 className="text-sm font-black text-blue-400 mb-4">為什麼 Run Once 才有用？</h4>
+                    <p className="text-xs text-slate-300 leading-relaxed font-bold">
+                       這代表 Webhook **並未開啟排程 (Scheduling)**。<br/><br/>
+                       請在 Make 編輯器左下角找到 <span className="text-emerald-400">Scheduling OFF/ON</span> 開關，將其切換為 <span className="text-emerald-400 font-black underline">ON</span>。
+                    </p>
+                 </div>
+                 <div className="bg-white/10 p-6 rounded-2xl border border-white/10">
+                    <h4 className="text-sm font-black text-emerald-400 mb-4">綁定小撇步</h4>
+                    <p className="text-xs text-slate-300 leading-relaxed font-bold">
+                       當客戶加入 LINE 後，會在「連結中心」出現。<br/><br/>
+                       綁定後，系統會自動在 Firestore 更新該客戶的 `UserId`。Make 的自動化腳本就會開始工作。
+                    </p>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* 新增預約 Modal */}
       {showResModal && (
         <div className="fixed inset-0 z-[300] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
            <div className="bg-white rounded-[40px] border border-slate-200 w-full max-w-sm p-10 shadow-2xl animate-slide-up relative">
@@ -297,7 +408,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                       <span>已選客戶：{selectedCustomer.name}</span>
                       <button onClick={() => setSelectedCustomer(null)} className="text-blue-500 font-black underline">重選</button>
                    </div>
-                   
                    <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase mb-3 block tracking-widest">預約時間</label>
                       <input type="datetime-local" value={resDate} onChange={e => setResDate(e.target.value)} className={`${inputClass} h-14 rounded-2xl`} />
@@ -311,36 +421,24 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                          <option value="簽約">簽約</option>
                       </select>
                    </div>
-                   
                    <button onClick={async () => {
                      if(!resDate) return alert("請輸入預約日期與時間");
                      setIsProcessing(true);
                      const latest = customers.find(c => c.id === selectedCustomer.id);
                      const currentUserId = latest?.UserId || '';
                      const rid = `res-${Date.now()}`;
-                     
                      const newRes: Reservation = {
-                       id: rid, 
-                       customerId: selectedCustomer.id, 
-                       customerName: selectedCustomer.name,
-                       UserId: currentUserId, 
-                       dateTime: resDate, 
-                       type: resType as any, 
-                       status: 'pending', 
-                       createdAt: Date.now(), 
-                       immediateNotified: false, 
-                       reminded: false
+                       id: rid, customerId: selectedCustomer.id, customerName: selectedCustomer.name,
+                       UserId: currentUserId, dateTime: resDate, type: resType as any, status: 'pending', 
+                       createdAt: Date.now(), immediateNotified: false, reminded: false
                      };
-                     
                      try {
                        await setDoc(doc(db, "reservations", rid), newRes);
-                       // 強制發送 Webhook
                        await triggerMakeWebhook(currentUserId, newRes.customerName, newRes.dateTime, newRes.type);
-                       
                        alert("預約成功建立！");
                        setShowResModal(false); setSelectedCustomer(null); setResDate('');
                      } catch(e) { alert("儲存失敗"); } finally { setIsProcessing(false); }
-                   }} className="w-full h-16 bg-slate-900 text-white rounded-3xl font-black text-sm hover:bg-slate-800 flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl shadow-slate-200">
+                   }} className="w-full h-16 bg-slate-900 text-white rounded-3xl font-black text-sm hover:bg-slate-800 flex items-center justify-center gap-3 shadow-xl transition-all">
                       {isProcessing ? <Loader2 className="w-6 h-6 animate-spin"/> : <ClipboardCheck className="w-6 h-6" />}
                       確認並送出通知
                    </button>
