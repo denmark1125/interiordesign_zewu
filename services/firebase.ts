@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc, addDoc } from "firebase/firestore";
+import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc, addDoc, where } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const firebaseConfig = {
@@ -42,4 +42,5 @@ export const uploadImage = async (file: File, pathPrefix: string = 'project-cove
 };
 
 // 重新導出常用的 Firestore 函式
-export { setDoc, doc, deleteDoc, onSnapshot, query, orderBy, collection, updateDoc, addDoc };
+// Fix: Added getDocs and where to exports to resolve import errors in components/CRMManager.tsx
+export { setDoc, doc, deleteDoc, onSnapshot, query, orderBy, collection, updateDoc, addDoc, getDocs, where };
