@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Customer, Reservation, User, LineConnection } from '../types';
-import { Users, Calendar as CalendarIcon, MessageSquare, Bell, UserPlus, Search, CheckCircle2, Clock, Send, Inbox, Link as LinkIcon, X, Check, Loader2, AlertCircle, Plus, ChevronRight, LayoutList, Bot, Smartphone, ExternalLink, ChevronLeft, AlertTriangle, UserCheck, Tag, Trash2, Save, Wifi, WifiOff, Zap, Bug } from 'lucide-react';
-import { db, lineConnectionsCollection, customersCollection, reservationsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc, addDoc } from '../services/firebase';
+import { Users, Calendar as CalendarIcon, MessageSquare, Bell, UserPlus, Search, CheckCircle2, Clock, Send, Inbox, Link as LinkIcon, X, Check, Loader2, AlertCircle, Plus, ChevronRight, LayoutList, Bot, Smartphone, ExternalLink, ChevronLeft, AlertTriangle, UserCheck, Tag, Trash2, Save, Wifi, Bug } from 'lucide-react';
+import { db, lineConnectionsCollection, customersCollection, reservationsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc } from '../services/firebase';
 
 // --- Make.com Webhook URL (最新) ---
 const MAKE_IMMEDIATE_WEBHOOK_URL = "https://hook.us2.make.com/dwpmwbwg6ffqrg68s0zhrjd8iv1cmdhp"; 
@@ -15,6 +15,8 @@ interface CRMManagerProps {
 const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject }) => {
   const [activeTab, setActiveTab] = useState<'reservations' | 'customers' | 'inbox' | 'automation'>('reservations');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // 初始化為空陣列避免渲染時 map 報錯
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [lineInbox, setLineInbox] = useState<LineConnection[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -39,19 +41,27 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const [resDate, setResDate] = useState('');
   const [resType, setResType] = useState<Reservation['type']>('諮詢');
 
+  // Firebase 即時同步 (加入錯誤處理)
   useEffect(() => {
-    const unsubCustomers = onSnapshot(query(customersCollection, orderBy("createdAt", "desc")), (snap) => {
-      setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));
-    });
-    const unsubInbox = onSnapshot(query(lineConnectionsCollection, orderBy("timestamp", "desc")), (snap) => {
-      setLineInbox(snap.docs.map(d => ({ id: d.id, ...d.data(), lineUserId: d.id } as LineConnection)).filter(i => !i.isBound));
-    });
-    const unsubRes = onSnapshot(query(reservationsCollection, orderBy("dateTime", "asc")), (snap) => {
-      setReservations(snap.docs.map(d => ({ id: d.id, ...d.data() } as Reservation)));
-    });
+    const unsubCustomers = onSnapshot(query(customersCollection, orderBy("createdAt", "desc")), 
+      (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer))),
+      (err) => console.error("Customer snapshot error:", err)
+    );
+    
+    const unsubInbox = onSnapshot(query(lineConnectionsCollection, orderBy("timestamp", "desc")), 
+      (snap) => setLineInbox(snap.docs.map(d => ({ id: d.id, ...d.data(), lineUserId: d.id } as LineConnection)).filter(i => !i.isBound)),
+      (err) => console.error("Inbox snapshot error:", err)
+    );
+    
+    const unsubRes = onSnapshot(query(reservationsCollection, orderBy("dateTime", "asc")), 
+      (snap) => setReservations(snap.docs.map(d => ({ id: d.id, ...d.data() } as Reservation))),
+      (err) => console.error("Reservation snapshot error:", err)
+    );
+    
     return () => { unsubCustomers(); unsubInbox(); unsubRes(); };
   }, []);
 
+  // Webhook 觸發
   const triggerMakeWebhook = async (res: Reservation) => {
     if (!MAKE_IMMEDIATE_WEBHOOK_URL || !res.lineUserId) return false;
     try {
@@ -86,8 +96,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         })
       });
       if (response.ok) alert("測試資料已成功發送！");
-      else alert("發送失敗");
-    } catch (e) { alert("發生錯誤"); }
+      else alert("發送失敗，請確認 Webhook URL 是否正確。");
+    } catch (e) { alert("發送失敗，請查看控制台報錯。"); }
     finally { setIsSendingTest(false); }
   };
 
@@ -142,17 +152,25 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     } catch (e) { alert("綁定失敗"); }
   };
 
+  // 防禦性搜尋邏輯
   const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.phone.includes(searchTerm)
+    (c.name || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (c.phone || "").includes(searchTerm)
   );
 
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+  
   const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  const isSameDay = (d1: Date, d2: Date) => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
-  const getReservationsForDay = (date: Date) => reservations.filter(res => isSameDay(new Date(res.dateTime), date));
+  
+  const isSameDay = (d1: Date, d2: Date) => 
+    d1.getFullYear() === d2.getFullYear() && 
+    d1.getMonth() === d2.getMonth() && 
+    d1.getDate() === d2.getDate();
+    
+  const getReservationsForDay = (date: Date) => 
+    reservations.filter(res => isSameDay(new Date(res.dateTime), date));
 
   const handleAddReservation = async () => {
     if (!selectedCustomer || !resDate) return;
@@ -176,10 +194,10 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         const success = await triggerMakeWebhook(newRes);
         if (success) await updateDoc(doc(db, "reservations", resId), { immediateNotified: true });
       }
-      alert("預約已建立");
+      alert("預約已建立並嘗試同步通知。");
       setShowResModal(false);
       setSelectedCustomer(null);
-    } catch (e) { alert("建立失敗"); }
+    } catch (e) { alert("建立預約失敗，請稍後再試。"); }
   };
 
   return (
@@ -214,7 +232,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                   <button onClick={handleNextMonth} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight className="w-5 h-5" /></button>
                 </div>
               </div>
-              <button onClick={() => setShowResModal(true)} className="bg-[#54534d] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg"><Plus className="w-4 h-4" /> 新增預約</button>
+              <button onClick={() => setShowResModal(true)} className="bg-[#54534d] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-slate-700 transition-all"><Plus className="w-4 h-4" /> 新增預約</button>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-7 gap-2 mb-4">
@@ -240,8 +258,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
             </div>
           </div>
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2"><LayoutList className="w-5 h-5 text-slate-400" />本日行程</h3>
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2"><LayoutList className="w-5 h-5 text-slate-400" /> 本日行程</h3>
             </div>
             <div className="flex-1 p-6 space-y-4 overflow-y-auto max-h-[600px]">
               {selectedDay ? (
@@ -274,13 +292,13 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       )}
 
       {activeTab === 'customers' && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-slide-up">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
               <input type="text" placeholder="搜尋客戶姓名或電話..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-800/5 transition-all font-bold" />
             </div>
-            <button onClick={() => setShowCustomerModal(true)} className="bg-slate-800 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-2"><UserPlus className="w-5 h-5" /> 新增客戶</button>
+            <button onClick={() => setShowCustomerModal(true)} className="bg-slate-800 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-700 transition-all shadow-md"><UserPlus className="w-5 h-5" /> 新增客戶</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredCustomers.map(customer => (
@@ -288,7 +306,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center font-black text-slate-400 text-xl overflow-hidden border">
-                      {customer.linePictureUrl ? <img src={customer.linePictureUrl} className="w-full h-full object-cover" /> : customer.name.charAt(0)}
+                      {customer.linePictureUrl ? <img src={customer.linePictureUrl} className="w-full h-full object-cover" /> : (customer.name || "?").charAt(0)}
                     </div>
                     <div>
                       <h4 className="font-black text-slate-800 text-lg">{customer.name}</h4>
@@ -298,7 +316,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                   <button onClick={() => handleDeleteCustomer(customer.id)} className="text-slate-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-5 h-5" /></button>
                 </div>
                 <div className="flex flex-wrap gap-1 mb-4">
-                  {customer.tags.map(t => <span key={t} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-bold">#{t}</span>)}
+                  {(customer.tags || []).map(t => <span key={t} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-bold">#{t}</span>)}
                 </div>
                 <div className="flex gap-2">
                   {customer.lineConnectionId ? (
@@ -310,10 +328,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                       <AlertTriangle className="w-4 h-4" /> 未連結 LINE
                     </div>
                   )}
-                  <button onClick={() => onConvertToProject?.(customer)} className="px-4 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200"><ExternalLink className="w-4 h-4" /></button>
+                  <button onClick={() => onConvertToProject?.(customer)} className="px-4 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200" title="轉換為專案"><ExternalLink className="w-4 h-4" /></button>
                 </div>
               </div>
             ))}
+            {filteredCustomers.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-bold">無搜尋結果</div>}
           </div>
         </div>
       )}
@@ -355,7 +374,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
               <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100 mb-8">
                  <div className="flex items-center gap-2 font-black text-slate-800 mb-4"><Bug className="w-5 h-5 text-emerald-600" /> 第一步：抓取資料結構</div>
                  <p className="text-sm text-slate-600 mb-6 font-bold">請在 Make.com Webhook 點擊「Redetermine Data Structure」，接著點擊下方按鈕發送測試 JSON。</p>
-                 <button onClick={handleSendTestData} disabled={isSendingTest} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg transition-all disabled:opacity-50">{isSendingTest ? <Loader2 className="animate-spin" /> : <Send />} 發送測試資料</button>
+                 <button onClick={handleSendTestData} disabled={isSendingTest} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg transition-all disabled:opacity-50">{isSendingTest ? <Loader2 className="animate-spin w-5 h-5" /> : <Send className="w-5 h-5" />} 發送測試資料</button>
               </div>
               <div className="bg-slate-800 p-8 rounded-[32px] text-white">
                  <h4 className="font-black mb-4 flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-400" /> 設定指南</h4>
@@ -369,13 +388,13 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* Modals */}
+      {/* --- Modals --- */}
       {linkingItem && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
            <div className="bg-white rounded-[40px] w-full max-w-md p-10 shadow-2xl animate-slide-up">
               <div className="flex justify-between items-center mb-8">
                  <h3 className="text-2xl font-black">綁定現有客戶</h3>
-                 <button onClick={() => setLinkingItem(null)} className="p-2 bg-slate-100 rounded-full"><X className="w-5 h-5" /></button>
+                 <button onClick={() => setLinkingItem(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X className="w-5 h-5" /></button>
               </div>
               <div className="flex items-center gap-4 p-5 bg-emerald-50 rounded-3xl border border-emerald-100 mb-6">
                  <img src={linkingItem.linePictureUrl} className="w-16 h-16 rounded-2xl shadow-sm" />
@@ -416,6 +435,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
               <div className="space-y-2 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
                  <p className="text-[10px] font-black text-slate-400 uppercase mb-3">請先選取客戶：</p>
                  {customers.map(c => <button key={c.id} onClick={() => setSelectedCustomer(c)} className="w-full p-4 text-left border rounded-2xl hover:bg-slate-50 font-black transition-all flex items-center justify-between group">{c.name} <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-800" /></button>)}
+                 {customers.length === 0 && <p className="text-center py-10 text-slate-300 font-bold">目前無客戶資料，請先新增客戶。</p>}
               </div>
             ) : (
               <div className="space-y-6 animate-fade-in">

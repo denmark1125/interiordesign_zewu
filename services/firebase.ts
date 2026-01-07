@@ -18,16 +18,16 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
+// 定義集合路徑
 export const usersCollection = collection(db, "users");
 export const projectsCollection = collection(db, "projects");
 export const lineConnectionsCollection = collection(db, "line_connections");
 export const customersCollection = collection(db, "customers");
-// 改回原始路徑 reservations
 export const reservationsCollection = collection(db, "reservations");
-
 export const lineMetricsCollection = collection(db, "line_metrics");
 export const systemLogsCollection = collection(db, "system_logs");
 
+// 通用圖片上傳函式
 export const uploadImage = async (file: File, pathPrefix: string = 'project-covers'): Promise<string> => {
   try {
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
@@ -36,8 +36,10 @@ export const uploadImage = async (file: File, pathPrefix: string = 'project-cove
     const snapshot = await uploadBytes(storageRef, file);
     return await getDownloadURL(snapshot.ref);
   } catch (error) {
+    console.error("Image upload failed:", error);
     throw new Error("圖片上傳失敗");
   }
 };
 
+// 重新導出常用的 Firestore 函式
 export { setDoc, doc, deleteDoc, onSnapshot, query, orderBy, collection, updateDoc, addDoc };
