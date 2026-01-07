@@ -20,7 +20,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const [reservations, setReservations] = useState<Reservation[]>([]);
   
   const [isNotifying, setIsNotifying] = useState<string | null>(null);
-  const [isSendingTest, setIsSendingTest] = useState(false);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
@@ -46,17 +45,18 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     const unsubInbox = onSnapshot(query(lineConnectionsCollection, orderBy("timestamp", "desc")), 
       (snap) => {
         setLineInbox(snap.docs.map(d => {
-          const data = d.data();
-          // 關鍵修正：檢查資料庫中的 UserId (大寫 U) 與 lineUserId (小寫 L)
-          // 根據您的截圖，UserId 才是正確的 UID (U開頭)
-          const actualUid = (data.UserId && data.UserId.startsWith('U')) ? data.UserId : 
-                           (data.lineUserId && data.lineUserId.startsWith('U')) ? data.lineUserId : 
-                           data.UserId || data.lineUserId || d.id;
+          const data = d.data() as any;
+          const realUid = data.UserId || d.id;
+          const displayName = data.lineUserId || "未知用戶";
+          const pic = data.linePictureUrl || "";
 
           return { 
-            id: d.id, 
-            ...data, 
-            lineUserId: actualUid 
+            id: d.id,
+            lineUserId: realUid,
+            lineDisplayName: displayName,
+            linePictureUrl: pic,
+            timestamp: data.timestamp,
+            isBound: data.isBound === true
           } as LineConnection;
         }).filter(i => !i.isBound));
       },
@@ -114,7 +114,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   };
 
   const handleDeleteInboxItem = async (id: string) => {
-    if (!window.confirm("確定要從連結池刪除這筆資料？\n刪除後該 LINE 客戶需重新輸入關鍵字才會再次出現。")) return;
+    if (!window.confirm("確定要從連結池刪除這筆資料？")) return;
     try {
       await deleteDoc(doc(db, "line_connections", id));
     } catch (e) {
@@ -122,34 +122,39 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     }
   };
 
-  const handleManualNotify = async (res: Reservation) => {
-    if (!res.lineUserId) { alert("此客戶未綁定 LINE"); return; }
-    setIsNotifying(res.id);
-    const success = await triggerMakeWebhook(res);
-    if (success) {
-      await updateDoc(doc(db, "reservations", res.id), { immediateNotified: true });
-      alert("通知補發成功！");
-    } else alert("發送失敗");
-    setIsNotifying(null);
-  };
-
   const handleDeleteReservation = async (id: string) => {
-    if (!window.confirm("確定刪除此預約？")) return;
-    try { await deleteDoc(doc(db, "reservations", id)); } catch (e) { alert("刪除失敗"); }
+    if (!window.confirm("確定取消此預約？")) return;
+    try {
+      await deleteDoc(doc(db, "reservations", id));
+    } catch (e) {
+      console.error("Failed to delete reservation:", e);
+      alert("取消失敗");
+    }
   };
 
   const handleLinkUser = async (customer: Customer) => {
     if (!linkingItem) return;
+    
     try {
+      const targetUid = linkingItem.lineUserId;
+      const targetName = linkingItem.lineDisplayName;
+
       await updateDoc(doc(db, "customers", customer.id), {
-        lineConnectionId: linkingItem.lineUserId, 
-        lineDisplayName: linkingItem.lineDisplayName,
-        linePictureUrl: linkingItem.linePictureUrl
+        lineConnectionId: targetUid, 
+        lineDisplayName: targetName,
+        linePictureUrl: linkingItem.linePictureUrl || ""
       });
-      await updateDoc(doc(db, "line_connections", linkingItem.id), { isBound: true });
+
+      await updateDoc(doc(db, "line_connections", linkingItem.id), { 
+        isBound: true 
+      });
+
       setLinkingItem(null);
-      alert("綁定成功！");
-    } catch (e) { alert("綁定失敗"); }
+      alert(`已成功將 LINE 帳號「${targetName}」與客戶「${customer.name}」綁定！`);
+    } catch (e) { 
+      console.error("Binding Error:", e);
+      alert("綁定失敗，請檢查網路連線。"); 
+    }
   };
 
   const filteredCustomers = (customers || []).filter(c => 
@@ -200,14 +205,14 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   };
 
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
+    <div className="space-y-6 animate-fade-in pb-20 font-sans">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Smartphone className="w-6 h-6 text-[#06C755]" />
             預約管理系統
           </h2>
-          <p className="text-slate-500 text-sm mt-1">即時同步 LINE 自動化通知</p>
+          <p className="text-slate-500 text-sm mt-1 font-medium">即時同步 LINE 自動化通知</p>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-xl overflow-x-auto max-w-full">
           <button onClick={() => setActiveTab('reservations')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'reservations' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}><CalendarIcon className="w-4 h-4" /> 預約日曆</button>
@@ -227,11 +232,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
               <div className="flex items-center gap-4">
                 <h3 className="text-xl font-black text-slate-800">{currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月</h3>
                 <div className="flex gap-1">
-                  <button onClick={handlePrevMonth} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronLeft className="w-5 h-5" /></button>
-                  <button onClick={handleNextMonth} className="p-2 hover:bg-white rounded-lg transition-all"><ChevronRight className="w-5 h-5" /></button>
+                  <button onClick={handlePrevMonth} className="p-2 hover:bg-white rounded-lg transition-all text-slate-600"><ChevronLeft className="w-5 h-5" /></button>
+                  <button onClick={handleNextMonth} className="p-2 hover:bg-white rounded-lg transition-all text-slate-600"><ChevronRight className="w-5 h-5" /></button>
                 </div>
               </div>
-              <button onClick={() => setShowResModal(true)} className="bg-[#54534d] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-slate-700 transition-all"><Plus className="w-4 h-4" /> 新增預約</button>
+              <button onClick={() => setShowResModal(true)} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-slate-700 transition-all"><Plus className="w-4 h-4" /> 新增預約</button>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-7 gap-2 mb-4">
@@ -247,8 +252,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                   const isToday = isSameDay(day, new Date());
                   const isSelected = selectedDay && isSameDay(day, selectedDay);
                   return (
-                    <button key={i} onClick={() => setSelectedDay(day)} className={`h-20 sm:h-24 rounded-2xl border transition-all flex flex-col items-center justify-start p-2 relative group ${isSelected ? 'bg-slate-800 border-slate-800 text-white shadow-xl scale-105 z-10' : isToday ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-100 hover:border-slate-300'}`}>
-                      <span className={`text-sm font-black mb-1 ${isSelected ? 'text-white' : 'text-slate-700'}`}>{i + 1}</span>
+                    <button key={i} onClick={() => setSelectedDay(day)} className={`h-20 sm:h-24 rounded-2xl border transition-all flex flex-col items-center justify-start p-2 relative group ${isSelected ? 'bg-slate-800 border-slate-800 text-white shadow-xl scale-105 z-10' : isToday ? 'bg-emerald-50 border-emerald-200 text-emerald-700 font-bold' : 'bg-white border-slate-100 hover:border-slate-300 text-slate-700'}`}>
+                      <span className={`text-sm font-black mb-1 ${isSelected ? 'text-white' : 'text-slate-800'}`}>{i + 1}</span>
                       {dayRes.length > 0 && <div className="w-2 h-2 rounded-full bg-[#06C755] mt-1"></div>}
                     </button>
                   );
@@ -269,8 +274,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">{res.type}</span>
                         <button onClick={() => handleDeleteReservation(res.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
                       </div>
-                      <h4 className="font-bold text-slate-800">{res.customerName}</h4>
-                      <p className="text-xs text-slate-500 mt-1 font-mono">{new Date(res.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                      <h4 className="font-bold text-slate-900">{res.customerName}</h4>
+                      <p className="text-xs text-slate-500 mt-1 font-mono font-bold">{new Date(res.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                       <div className="mt-3 flex gap-2">
                         <div className={`px-2 py-1 rounded text-[9px] font-black border ${res.immediateNotified ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
                            {res.immediateNotified ? '✓ 已發送' : '待補發'}
@@ -278,8 +283,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                       </div>
                     </div>
                   ))
-                ) : <p className="text-center py-20 text-slate-300 text-sm">今日無行程</p>
-              ) : <p className="text-center py-20 text-slate-300 text-sm">請選取日期</p>}
+                ) : <p className="text-center py-20 text-slate-400 text-sm font-bold">今日無行程</p>
+              ) : <p className="text-center py-20 text-slate-400 text-sm font-bold">請選取日期</p>}
             </div>
           </div>
         </div>
@@ -290,7 +295,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-              <input type="text" placeholder="搜尋客戶姓名或電話..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-800/5 transition-all font-bold" />
+              <input type="text" placeholder="搜尋客戶姓名或電話..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-800/5 transition-all font-bold text-slate-900" />
             </div>
             <button onClick={() => setShowCustomerModal(true)} className="bg-slate-800 text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-700 transition-all shadow-md"><UserPlus className="w-5 h-5" /> 新增客戶</button>
           </div>
@@ -303,11 +308,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                       {customer.linePictureUrl ? <img src={customer.linePictureUrl} className="w-full h-full object-cover" /> : (customer.name || "?").charAt(0)}
                     </div>
                     <div>
-                      <h4 className="font-black text-slate-800 text-lg">{customer.name}</h4>
-                      <p className="text-sm text-slate-400 font-mono">{customer.phone || '未留電話'}</p>
+                      <h4 className="font-black text-slate-900 text-lg">{customer.name}</h4>
+                      <p className="text-sm text-slate-500 font-mono font-bold">{customer.phone || '未留電話'}</p>
                     </div>
                   </div>
-                  <button onClick={() => handleDeleteCustomer(customer.id)} className="text-slate-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-5 h-5" /></button>
+                  <button onClick={() => handleDeleteCustomer(customer.id)} className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-5 h-5" /></button>
                 </div>
                 <div className="flex flex-wrap gap-1 mb-4">
                   {(customer.tags || []).map(t => <span key={t} className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-bold">#{t}</span>)}
@@ -324,25 +329,25 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       {activeTab === 'inbox' && (
         <div className="max-w-2xl mx-auto space-y-6 animate-slide-up">
           <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-xl">
-            <h3 className="text-2xl font-black mb-8 flex items-center gap-3"><Inbox className="w-8 h-8 text-[#06C755]" /> LINE 待連結池</h3>
+            <h3 className="text-2xl font-black text-slate-800 mb-8 flex items-center gap-3"><Inbox className="w-8 h-8 text-[#06C755]" /> LINE 待連結池</h3>
             <div className="space-y-4">
               {lineInbox.map(item => {
-                const isIdCorrupted = !item.lineUserId || !item.lineUserId.startsWith('U') || item.lineUserId.includes(' ');
+                const isIdCorrupted = !item.lineUserId || !item.lineUserId.startsWith('U');
                 return (
                   <div key={item.id} className={`p-5 rounded-3xl border flex flex-col sm:flex-row items-center justify-between group gap-4 transition-all ${isIdCorrupted ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
                     <div className="flex items-center gap-4 flex-1">
                       <div className="w-16 h-16 rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white flex-shrink-0">
-                        <img src={item.linePictureUrl} className="w-full h-full object-cover" />
+                        {item.linePictureUrl ? <img src={item.linePictureUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400 font-black">?</div>}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="font-black text-slate-800 text-lg truncate">{item.lineDisplayName}</h4>
+                        <h4 className="font-black text-slate-900 text-lg truncate">{item.lineDisplayName}</h4>
                         <div className="flex flex-col gap-0.5">
-                           <p className={`text-xs font-bold truncate ${isIdCorrupted ? 'text-red-500' : 'text-slate-400'}`}>
+                           <p className={`text-xs font-bold truncate ${isIdCorrupted ? 'text-red-500' : 'text-slate-500'}`}>
                              UID: {item.lineUserId || '未提供'}
                            </p>
                            {isIdCorrupted && (
                              <p className="text-[10px] font-black text-red-600 flex items-center gap-1 animate-pulse">
-                               <AlertCircle className="w-3 h-3" /> 資料 ID 格式可能異常
+                               <AlertCircle className="w-3 h-3" /> 資料 ID 格式不正常
                              </p>
                            )}
                            <p className="text-[10px] text-slate-400 font-mono mt-1 uppercase tracking-widest">{new Date(item.timestamp).toLocaleString()}</p>
@@ -376,21 +381,21 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
            <div className="bg-white rounded-[40px] w-full max-w-md p-10 shadow-2xl animate-slide-up">
               <div className="flex justify-between items-center mb-8">
-                 <h3 className="text-2xl font-black">綁定現有客戶</h3>
-                 <button onClick={() => setLinkingItem(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X className="w-5 h-5" /></button>
+                 <h3 className="text-2xl font-black text-slate-800">綁定現有客戶</h3>
+                 <button onClick={() => setLinkingItem(null)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors text-slate-500"><X className="w-5 h-5" /></button>
               </div>
               <div className="flex items-center gap-4 p-5 bg-emerald-50 rounded-3xl border border-emerald-100 mb-6">
-                 <img src={linkingItem.linePictureUrl} className="w-16 h-16 rounded-2xl shadow-sm" />
-                 <div><p className="text-xs font-black text-emerald-600 mb-1">正在綁定 LINE 帳號</p><h4 className="font-black text-slate-800 text-lg">{linkingItem.lineDisplayName}</h4></div>
+                 {linkingItem.linePictureUrl ? <img src={linkingItem.linePictureUrl} className="w-16 h-16 rounded-2xl shadow-sm" /> : <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center">?</div>}
+                 <div><p className="text-xs font-black text-emerald-600 mb-1">正在將此帳號連結至系統</p><h4 className="font-black text-slate-900 text-lg">{linkingItem.lineDisplayName}</h4></div>
               </div>
-              <p className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest">請從名單選取一位客戶連結：</p>
+              <p className="text-xs font-black text-slate-500 mb-3 uppercase tracking-widest">請從名單選取一位客戶：</p>
               <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                  {customers.filter(c => !c.lineConnectionId).map(c => (
-                   <button key={c.id} onClick={() => handleLinkUser(c)} className="w-full p-4 text-left bg-slate-50 hover:bg-[#06C755] hover:text-white rounded-2xl font-black transition-all border border-slate-100 flex justify-between items-center group">
+                   <button key={c.id} onClick={() => handleLinkUser(c)} className="w-full p-4 text-left bg-slate-50 hover:bg-[#06C755] hover:text-white rounded-2xl font-black transition-all border border-slate-100 flex justify-between items-center group text-slate-800">
                      {c.name} <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-all" />
                    </button>
                  ))}
-                 {customers.filter(c => !c.lineConnectionId).length === 0 && <p className="text-center py-10 text-slate-300 text-sm font-bold">無未綁定的客戶</p>}
+                 {customers.filter(c => !c.lineConnectionId).length === 0 && <p className="text-center py-10 text-slate-400 text-sm font-bold">無未綁定的客戶</p>}
               </div>
            </div>
         </div>
@@ -399,12 +404,12 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       {showCustomerModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
            <div className="bg-white rounded-[40px] w-full max-w-md p-10 shadow-2xl">
-              <h3 className="text-2xl font-black mb-8">新增客戶</h3>
+              <h3 className="text-2xl font-black text-slate-800 mb-8">新增客戶</h3>
               <div className="space-y-4">
-                <input type="text" value={newCustName} onChange={e => setNewCustName(e.target.value)} placeholder="姓名" className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black" />
-                <input type="text" value={newCustPhone} onChange={e => setNewCustPhone(e.target.value)} placeholder="電話" className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black" />
-                <button onClick={handleAddCustomer} className="w-full bg-slate-800 text-white py-5 rounded-[20px] font-black shadow-xl">儲存</button>
-                <button onClick={() => setShowCustomerModal(false)} className="w-full text-slate-400 font-bold">取消</button>
+                <input type="text" value={newCustName} onChange={e => setNewCustName(e.target.value)} placeholder="姓名" className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-slate-900" />
+                <input type="text" value={newCustPhone} onChange={e => setNewCustPhone(e.target.value)} placeholder="電話" className="w-full p-5 bg-slate-50 rounded-2xl outline-none font-black text-slate-900" />
+                <button onClick={handleAddCustomer} className="w-full bg-slate-800 text-white py-5 rounded-[20px] font-black shadow-xl hover:bg-slate-700 transition-colors">儲存</button>
+                <button onClick={() => setShowCustomerModal(false)} className="w-full text-slate-400 font-bold py-2">取消</button>
               </div>
            </div>
         </div>
@@ -413,20 +418,20 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       {showResModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-[40px] w-full max-w-md p-10 shadow-2xl">
-            <h3 className="text-2xl font-black mb-8">建立預約</h3>
+            <h3 className="text-2xl font-black text-slate-800 mb-8">建立預約</h3>
             {!selectedCustomer ? (
               <div className="space-y-2 max-h-72 overflow-y-auto">
-                 {customers.map(c => <button key={c.id} onClick={() => setSelectedCustomer(c)} className="w-full p-4 text-left border rounded-2xl font-black">{c.name}</button>)}
+                 {customers.map(c => <button key={c.id} onClick={() => setSelectedCustomer(c)} className="w-full p-4 text-left border rounded-2xl font-black text-slate-800 hover:bg-slate-50 transition-colors">{c.name}</button>)}
               </div>
             ) : (
               <div className="space-y-6">
-                <div className="p-4 bg-emerald-50 rounded-2xl font-black">{selectedCustomer.name}</div>
-                <input type="datetime-local" value={resDate} onChange={e => setResDate(e.target.value)} className="w-full p-5 border rounded-2xl font-black" />
-                <button onClick={handleAddReservation} className="w-full bg-[#54534d] text-white py-5 rounded-[20px] font-black">建立並通知</button>
-                <button onClick={() => setSelectedCustomer(null)} className="w-full text-slate-400 font-bold">選錯了？重新選擇</button>
+                <div className="p-4 bg-emerald-50 rounded-2xl font-black text-emerald-700 border border-emerald-100">{selectedCustomer.name}</div>
+                <input type="datetime-local" value={resDate} onChange={e => setResDate(e.target.value)} className="w-full p-5 border rounded-2xl font-black text-slate-900 outline-none focus:border-slate-400 transition-colors" />
+                <button onClick={handleAddReservation} className="w-full bg-slate-800 text-white py-5 rounded-[20px] font-black hover:bg-slate-700 transition-colors shadow-lg">建立並通知</button>
+                <button onClick={() => setSelectedCustomer(null)} className="w-full text-slate-400 font-bold py-2">選錯了？重新選擇</button>
               </div>
             )}
-            {!selectedCustomer && <button onClick={() => setShowResModal(false)} className="w-full mt-4 text-slate-400 font-bold">關閉</button>}
+            {!selectedCustomer && <button onClick={() => setShowResModal(false)} className="w-full mt-4 text-slate-400 font-bold py-2">關閉</button>}
           </div>
         </div>
       )}
