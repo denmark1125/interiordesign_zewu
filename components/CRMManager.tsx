@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Customer, Reservation, User, LineConnection } from '../types';
-import { Search, Clock, Link as LinkIcon, X, Loader2, Plus, ChevronRight, Bot, ChevronLeft, Trash2, Save, AlertTriangle, Zap, History, ClipboardCheck, CheckCircle2, ShieldCheck, ExternalLink, Info, Database, UserPlus } from 'lucide-react';
+import { Search, Clock, Link as LinkIcon, X, Loader2, Plus, ChevronRight, Bot, ChevronLeft, Trash2, Save, AlertTriangle, Zap, History, ClipboardCheck, CheckCircle2, ShieldCheck, ExternalLink, Info, Database, UserPlus, UserCircle } from 'lucide-react';
 import { db, lineConnectionsCollection, customersCollection, reservationsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc } from '../services/firebase';
 
 // Make.com Webhook URL
@@ -39,8 +39,13 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const [resType, setResType] = useState<string>('諮詢');
 
   const [showResModal, setShowResModal] = useState(false);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   
+  // 新增客戶用狀態
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+
   // 綁定用的狀態
   const [bindingLineUser, setBindingLineUser] = useState<LineConnection | null>(null);
 
@@ -69,6 +74,31 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     );
   }, [customers, searchTerm]);
 
+  const handleAddCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustomerName.trim()) return alert("請輸入客戶姓名");
+    setIsProcessing(true);
+    const id = `cust-${Date.now()}`;
+    const newCust: Customer = {
+      id,
+      name: newCustomerName,
+      phone: newCustomerPhone,
+      tags: [],
+      createdAt: Date.now()
+    };
+    try {
+      await setDoc(doc(db, "customers", id), newCust);
+      setShowAddCustomerModal(false);
+      setNewCustomerName('');
+      setNewCustomerPhone('');
+      alert("客戶已成功新增");
+    } catch (e) {
+      alert("新增失敗");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleBind = async (lineUser: LineConnection, customer: Customer) => {
     setIsProcessing(true);
     try {
@@ -84,6 +114,15 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       alert("連結失敗，請檢查網路連線"); 
     } finally { 
       setIsProcessing(false); 
+    }
+  };
+
+  const handleDeleteConnection = async (id: string) => {
+    if (!window.confirm("確定要將此人員從連結池中刪除嗎？（此動作不可復原）")) return;
+    try {
+      await deleteDoc(doc(db, "line_connections", id));
+    } catch (e) {
+      alert("刪除失敗");
     }
   };
 
@@ -133,7 +172,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 outline-none focus:border-slate-400 transition-all text-sm font-bold";
 
   return (
-    <div className="space-y-6 pb-20 max-w-5xl mx-auto animate-fade-in text-slate-800">
+    <div className="space-y-6 pb-20 max-w-5xl mx-auto animate-fade-in text-slate-800 font-sans">
       {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b border-slate-100 pb-4">
         <div>
@@ -179,17 +218,25 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                          <div className="w-12 h-12 rounded-2xl bg-slate-200 overflow-hidden border border-white shadow-sm">
                             {user.linePictureUrl ? <img src={user.linePictureUrl} className="w-full h-full object-cover" /> : <Bot className="w-full h-full p-2 text-slate-400" />}
                          </div>
-                         <div>
-                            <h4 className="font-black text-sm text-slate-800">{user.lineDisplayName}</h4>
+                         <div className="min-w-0">
+                            <h4 className="font-black text-sm text-slate-800 truncate">{user.lineDisplayName}</h4>
                             <p className="text-[10px] font-mono text-slate-400 truncate w-32">{user.UserId}</p>
                          </div>
                       </div>
-                      <button 
-                        onClick={() => setBindingLineUser(user)}
-                        className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black flex items-center gap-2 hover:bg-blue-600 transition-all active:scale-95"
-                      >
-                         <UserPlus className="w-3.5 h-3.5"/> 連結客戶
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => setBindingLineUser(user)}
+                          className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black flex items-center gap-2 hover:bg-blue-600 transition-all active:scale-95"
+                        >
+                          <UserPlus className="w-3.5 h-3.5"/> 連結客戶
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteConnection(user.id)}
+                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                    </div>
                  ))}
                  {lineInbox.length === 0 && (
@@ -251,7 +298,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 預約日曆介面 (保持不變) */}
+      {/* 預約日曆介面 */}
       {activeTab === 'reservations' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
            <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
@@ -300,13 +347,19 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 客戶列表 (保持不變) */}
+      {/* 客戶列表 */}
       {activeTab === 'customers' && (
         <div className="space-y-4 animate-fade-in">
-           <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5" />
-              <input type="text" placeholder="輸入客戶姓名搜尋..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`${inputClass} pl-12 h-14 rounded-2xl shadow-sm`} />
+           <div className="flex flex-col sm:flex-row gap-4 items-center">
+              <div className="relative flex-1 w-full">
+                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5" />
+                 <input type="text" placeholder="輸入客戶姓名搜尋..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`${inputClass} pl-12 h-14 rounded-2xl shadow-sm`} />
+              </div>
+              <button onClick={() => setShowAddCustomerModal(true)} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-sm flex items-center gap-2 shadow-xl hover:bg-slate-800 transition-all active:scale-95 whitespace-nowrap">
+                 <UserCircle className="w-5 h-5"/> 新增客戶
+              </button>
            </div>
+           
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredCustomers.map(c => (
                 <div key={c.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative group hover:shadow-xl transition-all">
@@ -331,6 +384,35 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                    </div>
                 </div>
               ))}
+              {filteredCustomers.length === 0 && (
+                <div className="col-span-full py-20 text-center text-slate-300 italic font-black">
+                   找不到符合條件的客戶，您可以點擊右上方「新增客戶」
+                </div>
+              )}
+           </div>
+        </div>
+      )}
+
+      {/* 手動新增客戶 Modal */}
+      {showAddCustomerModal && (
+        <div className="fixed inset-0 z-[400] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
+           <div className="bg-white rounded-[40px] border border-slate-200 w-full max-w-sm p-10 shadow-2xl animate-slide-up relative">
+              <button onClick={() => setShowAddCustomerModal(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 p-2"><X className="w-6 h-6"/></button>
+              <h3 className="text-xl font-black text-slate-900 mb-8 tracking-tight">新增系統客戶</h3>
+              <form onSubmit={handleAddCustomer} className="space-y-6">
+                 <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-widest">客戶姓名</label>
+                    <input type="text" value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)} placeholder="必填" className={`${inputClass} h-14 rounded-2xl`} required />
+                 </div>
+                 <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-widest">聯絡電話</label>
+                    <input type="text" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)} placeholder="選填" className={`${inputClass} h-14 rounded-2xl`} />
+                 </div>
+                 <button type="submit" disabled={isProcessing} className="w-full h-16 bg-slate-900 text-white rounded-3xl font-black text-sm hover:bg-slate-800 flex items-center justify-center gap-3 shadow-xl transition-all disabled:opacity-50">
+                    {isProcessing ? <Loader2 className="w-6 h-6 animate-spin"/> : <Save className="w-6 h-6" />}
+                    確認儲存客戶資料
+                 </button>
+              </form>
            </div>
         </div>
       )}
