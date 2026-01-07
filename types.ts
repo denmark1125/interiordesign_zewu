@@ -38,8 +38,9 @@ export interface Reservation {
   customerId: string;
   customerName: string;
   UserId?: string; // 對齊資料庫欄位 UserId
-  dateTime: string; // ISO String
-  type: '諮詢' | '丈量' | '看圖' | '簽約';
+  dateTime: string; // ISO String (e.g. 2024-05-20T14:30)
+  dateOnly: string; // 純日期格式 (e.g. 2024-05-20)，專為 Make.com 篩選設計
+  type: string;
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   immediateNotified: boolean;
   reminded: boolean;
