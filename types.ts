@@ -16,7 +16,7 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
-  lineConnectionId?: string; // 關聯到 LineConnection.lineUserId
+  UserId?: string; // 對齊資料庫欄位 UserId
   lineDisplayName?: string;
   linePictureUrl?: string;
   tags: string[];
@@ -25,7 +25,7 @@ export interface Customer {
 
 export interface LineConnection {
   id: string;
-  lineUserId: string; // U-ID
+  UserId: string; // U-ID
   lineDisplayName: string;
   linePictureUrl?: string;
   lastMessage?: string;
@@ -37,12 +37,12 @@ export interface Reservation {
   id: string;
   customerId: string;
   customerName: string;
-  lineUserId?: string; // 重要：發送通知所需的 ID
+  UserId?: string; // 對齊資料庫欄位 UserId
   dateTime: string; // ISO String
   type: '諮詢' | '丈量' | '看圖' | '簽約';
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
-  immediateNotified: boolean; // 建立後是否已立即通知
-  reminded: boolean; // 是否已由 Make.com 發送前晚提醒
+  immediateNotified: boolean;
+  reminded: boolean;
   note?: string;
   createdAt: number;
 }
