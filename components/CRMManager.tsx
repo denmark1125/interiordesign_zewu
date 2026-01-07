@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Customer, Reservation, User, LineConnection } from '../types';
-import { Search, Clock, Link as LinkIcon, X, Loader2, Plus, ChevronRight, Bot, ChevronLeft, Trash2, Save, AlertTriangle, Zap, History, ClipboardCheck, User as UserIcon, CheckCircle2, Calendar as CalendarIcon, Link2Off, Edit3, UserPlus } from 'lucide-react';
+import { Search, Clock, Link as LinkIcon, X, Loader2, Plus, ChevronRight, Bot, ChevronLeft, Trash2, Save, AlertTriangle, Zap, History, ClipboardCheck, User as UserIcon, CheckCircle2, Calendar as CalendarIcon, Link2Off, Edit3, UserPlus, MessageSquare } from 'lucide-react';
 import { db, lineConnectionsCollection, customersCollection, reservationsCollection, webhookLogsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc, limit } from '../services/firebase';
 
-// Make.com Webhook URL - 用於發送 Flex 訊息
-const MAKE_IMMEDIATE_WEBHOOK_URL = "https://hook.us2.make.com/fn9j1q2wlndrxf17jb5eylithejbnyv"; 
+// Make.com Webhook URL - 已確認為 wlqndrxf 正確版本
+const MAKE_IMMEDIATE_WEBHOOK_URL = "https://hook.us2.make.com/fn9j1q2wlqndrxf17jb5eylithejbnyv"; 
 
 interface WebhookLog {
   id: string;
@@ -46,6 +46,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
 
   // 1. 核心數據監聽
   useEffect(() => {
+    // 監聽客戶清單
     const unsubCustomers = onSnapshot(query(customersCollection, orderBy("createdAt", "desc")), 
       (snap) => {
         setCustomers(snap.docs.map(d => {
@@ -53,18 +54,20 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
           return { 
             id: d.id, 
             ...data,
-            // 關鍵修復：確保讀取時支援多種欄位命名
-            UserId: (data.UserId || data.lineUserId || "").toString().trim() 
+            // 強制規格化 ID，讀取時將任何可能的 ID 欄位都塞入 UserId
+            UserId: (data.UserId || data.userId || data.lineUserId || "").toString().trim() 
           } as Customer;
         }));
       }
     );
     
+    // 監聽 LINE 待連結清單
     const unsubInbox = onSnapshot(query(lineConnectionsCollection, orderBy("timestamp", "desc")), 
       (snap) => {
         const data = snap.docs.map(d => {
           const item = d.data();
-          const uid = (item.lineUserId || item.UserId || "").toString().trim();
+          // LINE 原始資料的 ID 通常在 lineUserId 欄位
+          const uid = (item.lineUserId || item.UserId || item.userId || "").toString().trim();
           return { 
             id: d.id, 
             lineUserId: uid, 
@@ -77,22 +80,24 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       }
     );
     
+    // 監聽預約
     const unsubRes = onSnapshot(query(reservationsCollection, orderBy("dateTime", "asc")), 
       (snap) => setReservations(snap.docs.map(d => {
         const data = d.data();
         return { 
             ...data,
-            UserId: (data.UserId || data.lineUserId || "").toString().trim()
+            UserId: (data.UserId || data.userId || data.lineUserId || "").toString().trim()
         } as Reservation;
       }))
     );
 
+    // 監聽發送日誌
     const unsubLogs = onSnapshot(query(webhookLogsCollection, orderBy("timestamp", "desc"), limit(50)), 
       (snap) => setWebhookLogs(snap.docs.map(d => {
         const data = d.data();
         return {
           ...data,
-          lineUserId: (data.UserId || data.lineUserId || "無 ID").toString().trim()
+          lineUserId: (data.UserId || data.userId || data.lineUserId || "無 ID").toString().trim()
         } as WebhookLog;
       }))
     );
@@ -100,22 +105,20 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     return () => { unsubCustomers(); unsubInbox(); unsubRes(); unsubLogs(); };
   }, []);
 
-  // 核心過濾邏輯：透過全局清洗過的 UserId 集合進行絕對過濾
+  // 判定是否連動成功的關鍵函式
+  const getCleanUserId = useCallback((customer: any) => {
+    if (!customer) return "";
+    const uid = (customer.UserId || customer.userId || customer.lineUserId || "").toString().trim();
+    return (uid.startsWith('U') && uid.length > 5) ? uid : "";
+  }, []);
+
   const lineInbox = useMemo(() => {
-    const boundUserIds = new Set(customers.map(c => c.UserId).filter(id => !!id && id.length > 5));
+    const boundUserIds = new Set(customers.map(c => getCleanUserId(c)).filter(id => !!id));
     return rawLineInbox.filter(item => {
       const currentId = item.lineUserId.trim();
-      return !item.isBound && currentId.length > 5 && !boundUserIds.has(currentId);
+      return !item.isBound && !boundUserIds.has(currentId);
     });
-  }, [rawLineInbox, customers]);
-
-  // 關鍵函式：判定客戶是否已連動 LINE
-  const getCleanUserId = (customer: Customer | undefined) => {
-    if (!customer) return "";
-    // 同時檢查 UserId 與可能殘留的 lineUserId 欄位
-    const uid = (customer.UserId || (customer as any).lineUserId || "").toString().trim();
-    return uid.startsWith('U') ? uid : "";
-  };
+  }, [rawLineInbox, customers, getCleanUserId]);
 
   const handleUnlinkLine = async (customer: Customer) => {
     if (!window.confirm(`確定要解除「${customer.name}」的 LINE 連動？`)) return;
@@ -123,7 +126,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     try {
       await updateDoc(doc(db, "customers", customer.id), {
         UserId: "", 
-        lineUserId: "", // 同步清除備份欄位
+        userId: "", 
+        lineUserId: "", 
         lineDisplayName: "",
         linePictureUrl: ""
       });
@@ -165,19 +169,21 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     setShowResModal(true);
   };
 
+  // 🔥 關鍵修正：確保 UserId 正確綁定
   const handleBind = async (lineUser: LineConnection, customer: Customer) => {
     setIsProcessing(true);
     const cleanId = lineUser.lineUserId.trim();
     try {
-      // 標準化綁定：確保寫入正確欄位名，並同步 lineUserId 欄位以利相容
+      // 1. 更新客戶表，確保 UserId (大寫 U) 被寫入
       await updateDoc(doc(db, "customers", customer.id), {
         UserId: cleanId, 
-        lineUserId: cleanId, 
+        userId: cleanId, // 備份小寫
         lineDisplayName: lineUser.lineDisplayName,
         linePictureUrl: lineUser.linePictureUrl || ''
       });
+      // 2. 更新 LINE 進件表，標記為已綁定
       await updateDoc(doc(db, "line_connections", lineUser.id), { isBound: true });
-      alert(`已成功連結：${customer.name}\nID: ${cleanId.substring(0, 8)}...`);
+      alert(`🎉 綁定成功！\n客戶：${customer.name}\nLINE：${lineUser.lineDisplayName}`);
     } catch (e) { alert("連結失敗"); } finally { setIsProcessing(false); }
   };
 
@@ -189,7 +195,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     return customers.filter(c => c.name.toLowerCase().includes(term));
   }, [customers, searchTerm]);
 
-  // 關鍵發送機制：將預約資料對應至 Make.com Webhook
+  // 發送數值至 Make.com Webhook
   const triggerMakeWebhook = async (userId: string, clientName: string, dateTime: string, serviceName: string) => {
     const isUIdValid = userId && userId.startsWith('U');
     const logId = `log-${Date.now()}`;
@@ -204,20 +210,19 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       operator: currentUser.name
     };
 
+    // 寫入日誌到資料庫
     await setDoc(doc(db, "webhook_logs", logId), newLog);
     if (!isUIdValid) return false;
 
-    // 對應數值至 Make.com URL 參數，讓 Make 端的 Flex Message 抓取
     const params = new URLSearchParams();
     params.append('UserId', userId.trim()); 
-    params.append('clientName', clientName); 
-    params.append('serviceName', serviceName);
+    params.append('clientName', clientName.trim()); 
+    params.append('serviceName', serviceName.trim());
     params.append('appointmentTime', dateTime.replace('T', ' ')); 
 
     const finalUrl = `${MAKE_IMMEDIATE_WEBHOOK_URL}?${params.toString()}`;
 
     try {
-      // 使用 no-cors 模式發送，避免瀏覽器攔截 CORS，Make 依然能收得到資料
       await fetch(finalUrl, { method: 'POST', mode: 'no-cors' });
       return true; 
     } catch (e) { 
@@ -230,7 +235,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const cardClass = "bg-white p-5 rounded-2xl border border-slate-100 shadow-sm relative group hover:shadow-md transition-all";
 
   return (
-    <div className="space-y-6 pb-20 max-w-5xl mx-auto animate-fade-in text-slate-800">
+    <div className="space-y-6 pb-20 max-w-5xl mx-auto animate-fade-in text-slate-800 font-sans">
       <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b border-slate-100 pb-4">
         <div>
           <h2 className="text-xl font-black tracking-tight text-slate-900">案場客戶管理</h2>
@@ -262,7 +267,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                   </div>
                   <div className="min-w-0">
                      <h4 className="font-bold text-sm truncate">{item.lineDisplayName}</h4>
-                     <p className="text-[9px] font-mono text-emerald-500 font-black uppercase">U-ID: {item.lineUserId.substring(0, 10)}...</p>
+                     <p className="text-[9px] font-mono text-emerald-500 font-black uppercase tracking-tighter">ID: {item.lineUserId.substring(0, 12)}...</p>
                   </div>
                </div>
                <div className="pt-3 border-t border-slate-50">
@@ -281,7 +286,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                   </div>
                </div>
             </div>
-          )) : <div className="col-span-full py-20 text-center text-slate-300 text-xs italic">無待連結的 LINE 帳號 (所有用戶皆已完成綁定)</div>}
+          )) : <div className="col-span-full py-20 text-center text-slate-300 text-xs italic font-bold">目前無待連結帳號</div>}
         </div>
       )}
 
@@ -316,8 +321,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                            isSelected ? 'bg-slate-900 border-slate-900 shadow-[0_10px_30px_rgba(0,0,0,0.3)] scale-110 !z-30 rounded-lg' : 'bg-white border-transparent hover:bg-slate-50'
                          }`}
                        >
-                          <span className={`text-[13px] font-black ${isSelected ? 'text-white' : isToday ? 'text-blue-500' : 'text-slate-500'}`}>{i+1}</span>
-                          {resCount > 0 && <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isSelected ? 'bg-white' : 'bg-slate-900'}`}/>}
+                          <span className={`text-[13px] font-black ${isSelected ? 'text-white' : isToday ? 'text-blue-500 underline decoration-2' : 'text-slate-500'}`}>{i+1}</span>
+                          {resCount > 0 && <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white animate-pulse' : 'bg-slate-900'}`}/>}
                        </button>
                     );
                  })}
@@ -326,26 +331,32 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
            
            <div className="bg-white rounded-2xl border border-slate-100 flex flex-col h-fit shadow-sm overflow-hidden min-h-[400px]">
               <div className="p-4 bg-slate-50 border-b border-slate-50 font-black text-slate-400 text-[10px] uppercase tracking-widest flex items-center gap-2">
-                 <Clock className="w-3 h-3"/> 本日行程 
+                 <Clock className="w-3 h-3"/> 本日預約清單 
                  {selectedDay && <span className="ml-auto text-slate-900 font-bold">{selectedDay.getMonth()+1}/{selectedDay.getDate()}</span>}
               </div>
               <div className="p-4 space-y-3 flex-1 overflow-y-auto max-h-[500px] custom-scrollbar">
-                 {selectedDay && getReservationsForDay(selectedDay).length > 0 ? getReservationsForDay(selectedDay).map(res => (
-                   <div key={res.id} className="p-4 border border-slate-50 rounded-xl bg-white shadow-sm group hover:border-slate-200 transition-all">
-                      <div className="flex justify-between items-start mb-2">
-                         <span className="text-[9px] font-black text-slate-400 border border-slate-200 px-2 py-0.5 rounded-full">{res.type}</span>
-                         <button onClick={() => { if(confirm("確定刪除此預約？")) deleteDoc(doc(db,"reservations",res.id))}} className="text-slate-200 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5"/></button>
+                 {selectedDay && getReservationsForDay(selectedDay).length > 0 ? getReservationsForDay(selectedDay).map(res => {
+                    const isValidRes = !!getCleanUserId(res);
+                    return (
+                      <div key={res.id} className="p-4 border border-slate-50 rounded-xl bg-white shadow-sm group hover:border-slate-200 transition-all">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-[9px] font-black text-slate-400 border border-slate-200 px-2 py-0.5 rounded-full">{res.type}</span>
+                            <button onClick={() => { if(confirm("確定刪除此預約？")) deleteDoc(doc(db,"reservations",res.id))}} className="text-slate-200 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5"/></button>
+                          </div>
+                          <h4 className="font-bold text-sm text-slate-900">{res.customerName}</h4>
+                          <div className="flex justify-between items-center mt-2">
+                            <p className="text-[10px] font-black text-slate-400 flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(res.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+                            {isValidRes && <Zap className="w-3 h-3 text-emerald-500 fill-current animate-bounce" />}
+                          </div>
                       </div>
-                      <h4 className="font-bold text-sm text-slate-900">{res.customerName}</h4>
-                      <p className="text-[10px] font-black text-slate-400 flex items-center gap-1 mt-1"><Clock className="w-3 h-3"/> {new Date(res.dateTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
-                   </div>
-                 )) : <div className="text-center py-20 text-slate-200 text-[10px] italic">點選左側日期查看行程</div>}
+                    );
+                 }) : <div className="text-center py-20 text-slate-200 text-[10px] italic font-bold">點選日期查看預約</div>}
               </div>
            </div>
         </div>
       )}
 
-      {/* 客戶列表 */}
+      {/* 客戶列表 (強化連動視覺與副標題) */}
       {activeTab === 'customers' && (
         <div className="space-y-4">
            <div className="flex flex-col sm:flex-row gap-3">
@@ -362,16 +373,30 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
               {filteredCustomers.map(c => {
                 const uid = getCleanUserId(c);
                 const isValid = !!uid;
+                
                 return (
                   <div key={c.id} className={cardClass}>
                      <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
-                           <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center font-black text-slate-300 border border-slate-100 text-sm overflow-hidden flex-shrink-0">
-                              {c.linePictureUrl ? <img src={c.linePictureUrl} className="w-full h-full object-cover"/> : c.name.charAt(0)}
+                           <div className="relative">
+                              <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center font-black text-slate-300 border border-slate-100 text-base overflow-hidden flex-shrink-0">
+                                 {c.linePictureUrl ? <img src={c.linePictureUrl} className="w-full h-full object-cover"/> : c.name.charAt(0)}
+                              </div>
+                              {isValid && (
+                                <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm border border-slate-50">
+                                   <Zap className="w-3 h-3 text-emerald-500 fill-current animate-bounce" />
+                                </div>
+                              )}
                            </div>
                            <div className="min-w-0">
-                              <h4 className="font-black text-sm truncate text-slate-900">{c.name}</h4>
-                              <p className="text-[10px] text-slate-400 font-mono font-bold">{c.phone || '無電話'}</p>
+                              <h4 className="font-black text-sm truncate text-slate-900">
+                                {c.name} {isValid && c.lineDisplayName && <span className="text-emerald-500 text-[10px] font-bold">({c.lineDisplayName})</span>}
+                              </h4>
+                              {c.phone && (
+                                <p className="text-[10px] text-slate-400 font-mono font-bold flex items-center gap-1">
+                                  {c.phone}
+                                </p>
+                              )}
                            </div>
                         </div>
                         <button onClick={() => handleDeleteCustomer(c.id, c.name)} className="p-2 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
@@ -382,9 +407,16 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                         <button onClick={() => onConvertToProject?.(c)} className="w-full bg-white text-slate-600 py-2.5 rounded-xl text-[10px] font-black border border-slate-100 hover:bg-slate-50 transition-all active:scale-95">轉正式案場</button>
                         
                         <div className="flex flex-col gap-1 w-full">
-                           <div className={`w-full px-2.5 py-2.5 rounded-xl text-[10px] font-black border flex items-center justify-center gap-1 shadow-sm ${isValid ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-300 border-slate-100'}`}>
-                              {isValid && <Zap className="w-3 h-3 fill-current"/>}
-                              {isValid ? `已連動 (${uid.substring(0, 6)})` : '未連動 LINE'}
+                           {/* 閃電連動按鈕：狀態由 isValid 決定 */}
+                           <div className={`w-full px-2.5 py-2.5 rounded-xl text-[10px] font-black border flex items-center justify-center gap-2 shadow-sm transition-all ${isValid ? 'bg-emerald-500 text-white border-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse' : 'bg-slate-50 text-slate-300 border-slate-100'}`}>
+                              {isValid ? (
+                                <div className="flex items-center gap-1.5">
+                                  <Zap className="w-3.5 h-3.5 fill-white text-white" />
+                                  <span>已成功連動 LINE</span>
+                                </div>
+                              ) : (
+                                <span>尚未連動 LINE</span>
+                              )}
                            </div>
                            {isValid && (
                              <button onClick={() => handleUnlinkLine(c)} className="text-[9px] text-red-400 font-black hover:text-red-600 flex items-center justify-center gap-1 mt-1 transition-colors">
@@ -413,7 +445,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                        <th className="px-6 py-4">時間</th>
                        <th className="px-6 py-4">建立人</th>
                        <th className="px-6 py-4">客戶 / 項目</th>
-                       <th className="px-6 py-4">UserId (LINE)</th>
+                       <th className="px-6 py-4">USERID (LINE)</th>
                        <th className="px-6 py-4 text-right">狀態</th>
                     </tr>
                  </thead>
@@ -455,7 +487,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                        <button key={c.id} onClick={() => setSelectedCustomer(c)} className="w-full p-4 text-left bg-slate-50 rounded-2xl font-black text-sm text-slate-700 hover:bg-slate-900 hover:text-white transition-all flex justify-between items-center group">
                           <span className="flex items-center gap-2">
                              {c.name}
-                             {isLinked && <Zap className="w-3 h-3 text-emerald-500 fill-current"/>}
+                             {isLinked && <Zap className="w-4 h-4 text-emerald-500 fill-current animate-bounce"/>}
                           </span>
                           <ChevronRight className="w-4 h-4 opacity-30 group-hover:opacity-100"/>
                        </button>
@@ -465,12 +497,15 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
               ) : (
                 <div className="space-y-5">
                    <div className="p-4 bg-slate-50 rounded-2xl text-[12px] font-black text-slate-600 flex justify-between items-center border border-slate-100">
-                      <span>已選客戶：{selectedCustomer.name}</span>
+                      <span className="flex items-center gap-2">
+                        已選：{selectedCustomer.name}
+                        {!!getCleanUserId(selectedCustomer) && <Zap className="w-3.5 h-3.5 text-emerald-500 fill-current animate-pulse" />}
+                      </span>
                       <button onClick={() => setSelectedCustomer(null)} className="text-blue-500 font-black">更換</button>
                    </div>
                    
                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">預約日期與時間</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">行程日期與時間</label>
                       <input 
                         type="datetime-local" 
                         value={resDate} 
@@ -486,21 +521,22 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                          {['諮詢', '丈量', '看圖', '簽約'].map(type => (
                            <button key={type} onClick={() => { setResType(type); setCustomType(''); }} className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${resType === type ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>{type}</button>
                          ))}
-                         <button onClick={() => setResType('其他')} className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${resType === '其他' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>+ 其他</button>
+                         <button onClick={() => { setResType('其他'); setTimeout(() => customInputRef.current?.focus(), 100); }} className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${resType === '其他' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>+ 其他</button>
                       </div>
                    </div>
                    
                    {resType === '其他' && (
-                     <input type="text" placeholder="輸入行程內容..." value={customType} onChange={e => setCustomType(e.target.value)} className={`${inputClass} bg-emerald-50/30 border-emerald-100 h-12`} />
+                     <input ref={customInputRef} type="text" placeholder="輸入自定義行程..." value={customType} onChange={e => setCustomType(e.target.value)} className={`${inputClass} bg-emerald-50/30 border-emerald-100 h-12`} />
                    )}
 
                    <button onClick={async () => {
-                     if(!resDate) return alert("請填寫時間");
+                     if(!resDate) return alert("請選擇日期時間");
                      setIsProcessing(true);
                      
-                     // 關鍵：從最新狀態抓取 ID
-                     const latestCustomer = customers.find(c => c.id === selectedCustomer.id);
-                     const currentUserId = getCleanUserId(latestCustomer);
+                     // 🔥 重要：從最新的客戶列表重新抓取最新的 UserId，確保它是 100% 正確的
+                     const latestCustomerData = customers.find(c => c.id === selectedCustomer.id);
+                     const currentUserId = getCleanUserId(latestCustomerData);
+                     
                      const rid = `res-${Date.now()}`;
                      const finalService = resType === '其他' ? customType : resType;
                      
@@ -508,7 +544,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                        id: rid,
                        customerId: selectedCustomer.id,
                        customerName: selectedCustomer.name,
-                       UserId: currentUserId, // 確保 ID 被正確存入預約紀錄
+                       UserId: currentUserId, 
                        dateTime: resDate,
                        type: finalService as any,
                        status: 'pending',
@@ -519,11 +555,15 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
 
                      try {
                        await setDoc(doc(db, "reservations", rid), newRes);
-                       // 觸發 Webhook，對應數值至 Make.com
-                       await triggerMakeWebhook(currentUserId, newRes.customerName, newRes.dateTime, finalService);
-                       setShowResModal(false); setSelectedCustomer(null);
+                       // 呼叫 Webhook
+                       const sent = await triggerMakeWebhook(currentUserId, newRes.customerName, newRes.dateTime, finalService);
+                       setShowResModal(false); 
+                       setSelectedCustomer(null);
+                       alert(sent ? "✅ 預約成功並已發送 LINE 通知" : "✅ 預約成功（客戶未連動，僅系統存檔）");
                      } catch(e) { alert("失敗"); } finally { setIsProcessing(false); }
-                   }} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl">確認行程並發送通知</button>
+                   }} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-sm active:scale-95 transition-all shadow-xl">
+                    {isProcessing ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : "確認行程並發送 LINE"}
+                   </button>
                 </div>
               )}
            </div>
