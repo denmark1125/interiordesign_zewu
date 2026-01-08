@@ -16,18 +16,18 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
-  UserId?: string; // 統一使用 UserId 存放 LINE U-ID
-  lineDisplayName?: string;
+  UserId?: string; // 統一使用 UserId 存放 LINE U-ID (Uxxxx...)
+  lineUserId?: string; // 存放 LINE 的顯示名稱 (暱稱)
   linePictureUrl?: string;
-  lineConnectionId?: string; // 新增：用於精準還原到流量池的文件 ID
+  lineConnectionId?: string; // 用於精準還原到流量池的文件 ID
   tags: string[];
   createdAt: number;
 }
 
 export interface LineConnection {
   id: string;
-  UserId: string; // LINE 原始回傳的 ID
-  lineDisplayName: string;
+  UserId: string; // LINE 原始回傳的 U-ID
+  lineUserId: string; // LINE 顯示名稱 (暱稱)
   linePictureUrl?: string;
   lastMessage?: string;
   timestamp: number;
@@ -38,7 +38,8 @@ export interface Reservation {
   id: string;
   customerId: string;
   customerName: string;
-  UserId?: string; // 統一使用 UserId 存放 LINE U-ID
+  UserId?: string; // 存放 LINE U-ID
+  lineUserId?: string; // 存放 LINE 暱稱
   dateTime: string; // ISO String
   type: '諮詢' | '丈量' | '看圖' | '簽約';
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';

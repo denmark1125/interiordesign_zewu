@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { SystemLog, User, Reservation } from '../types';
 import { GitBranch, Plus, Save, Trash2, Calendar, Tag, X, Shield, Activity, Clock, Zap, Bug, Send, CheckCircle2, Loader2 } from 'lucide-react';
 import { db, systemLogsCollection, onSnapshot, query, orderBy, setDoc, doc, deleteDoc } from '../services/firebase';
 
+// 已修正為正確的 Webhook URL (wlqndrxf)
 const MAKE_IMMEDIATE_WEBHOOK_URL = "https://hook.us2.make.com/fn9j1q2wlqndrxf17jb5eylithejbnyv"; 
 
 interface SystemChangelogProps {
@@ -36,7 +36,6 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
   const handleTestWebhook = async () => {
     setTestStatus('loading');
     
-    // 💡 終極方案：使用 URLSearchParams 並掛載在網址上
     const params = new URLSearchParams();
     params.append('UserId', testUserId);
     params.append('clientName', testClientName);
@@ -103,7 +102,7 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
               <h3 className="text-xl font-black flex items-center gap-2 text-slate-800"><Zap className="w-6 h-6 text-amber-500" /> Webhook 連線診斷</h3>
            </div>
            <p className="text-xs font-bold text-slate-400 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100 italic">
-             注意：此模式會將資料掛在網址後方發送，能 100% 避開 CORS 錯誤並確保 Make.com 將 UserId 識別為獨立變數。
+             使用 URL Query String 模式進行連線診斷。
            </p>
            <div className="space-y-4 mb-6">
               <div>
@@ -133,7 +132,7 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
                     <input type="text" value={version} onChange={e => setVersion(e.target.value)} placeholder="v1.x.x" className="w-full bg-slate-50 border border-slate-300 rounded-2xl p-4 text-slate-900 font-bold mb-4" />
                     <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="標題" className="w-full bg-slate-50 border border-slate-300 rounded-2xl p-4 text-slate-900 font-bold mb-4" />
                     <textarea rows={5} value={content} onChange={e => setContent(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl p-4 text-slate-900 font-bold mb-6" placeholder="詳細內容..." />
-                    <button onClick={handleAddLog} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-xl">儲存</button>
+                    <button onClick={handleAddLog} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black shadow-xl">儲存更新</button>
                 </div>
             )}
             <div className="space-y-8 relative pl-6 border-l-2 border-slate-100">
