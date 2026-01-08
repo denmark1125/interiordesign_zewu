@@ -4,7 +4,7 @@ import { Search, Clock, Link as LinkIcon, X, Loader2, Plus, ChevronRight, Bot, C
 import { db, lineConnectionsCollection, customersCollection, reservationsCollection, webhookLogsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc, limit, getDocs, where, collection } from '../services/firebase';
 
 // 正確的 Webhook URL
-const MAKE_IMMEDIATE_WEBHOOK_URL = "https://hook.us2.make.com/fn9j1q2wlqndrxf17jb5eylithejbnyv"; 
+const MAKE_IMMEDIATE_WEBHOOK_URL = "https://hook.us2.make.com/dwpmwbwg6ffqrg68s0zhrjd8iv1cmdhp"; 
 
 interface WebhookLog {
   id: string;
