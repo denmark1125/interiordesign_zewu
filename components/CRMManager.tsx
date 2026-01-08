@@ -499,7 +499,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                         });
                         
                         if (uid) {
-                          const params = new URLSearchParams({ UserId: uid, clientName: selectedCustomer.name, serviceName: service, appointmentTime: resDate.replace('T', ' ') });
+                          const params = new URLSearchParams({ UserId: uid, clientName: luid, serviceName: service, appointmentTime: resDate.replace('T', ' ') });
                           await fetch(`${MAKE_IMMEDIATE_WEBHOOK_URL}?${params.toString()}`, { method: 'POST', mode: 'no-cors' });
                           
                           const lid = `log-${Date.now()}`;
