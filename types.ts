@@ -19,13 +19,14 @@ export interface Customer {
   UserId?: string; // 統一使用 UserId 存放 LINE U-ID
   lineDisplayName?: string;
   linePictureUrl?: string;
+  lineConnectionId?: string; // 新增：用於精準還原到流量池的文件 ID
   tags: string[];
   createdAt: number;
 }
 
 export interface LineConnection {
   id: string;
-  lineUserId: string; // LINE 原始回傳的 ID
+  UserId: string; // LINE 原始回傳的 ID
   lineDisplayName: string;
   linePictureUrl?: string;
   lastMessage?: string;
