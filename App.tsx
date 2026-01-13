@@ -14,7 +14,6 @@ import { DesignProject, User, LineMetric, Customer } from './types';
 import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy, collection } from './services/firebase';
 import { Plus, Loader2 } from 'lucide-react';
 
-// Fixed: Defined and exported ProjectFilterType to resolve the "Module has no exported member" error in SiteDashboard.tsx
 export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
 const App: React.FC = () => {
@@ -61,7 +60,7 @@ const App: React.FC = () => {
   };
 
   const handleTabChange = (newView: any) => {
-    setSelectedProject(null);
+    setSelectedProject(null); // 重要：切換頁面時清空選中專案，避免 detail 頁面與列表狀態衝突
     setView(newView);
   };
 
@@ -75,7 +74,7 @@ const App: React.FC = () => {
     setShowNewProjectModal(true);
   };
 
-  if (isLoading) return <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 className="w-10 h-10 text-accent animate-spin" /><p className="text-slate-500 font-bold">澤物系統啟動中...</p></div>;
+  if (isLoading) return <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 className="w-10 h-10 text-slate-800 animate-spin" /><p className="text-slate-500 font-bold tracking-widest">澤物系統啟動中...</p></div>;
   if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
 
   return (
@@ -96,26 +95,29 @@ const App: React.FC = () => {
       {view === 'team' && <TeamManagement users={users} currentUser={currentUser} onAddUser={(u) => setDoc(doc(db, "users", u.id), u)} onUpdateUser={(u) => setDoc(doc(db, "users", u.id), u)} onDeleteUser={(id) => deleteDoc(doc(db, "users", id))} />}
       {view === 'analytics' && <AnalyticsDashboard projects={projects} />}
       
-      {view === 'projects' && (
+      {view === 'projects' && !selectedProject && (
         <div className="space-y-6 animate-fade-in">
-          <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-800">所有案場列表</h2>
-            <button onClick={() => { setConversionData(null); setShowNewProjectModal(true); }} className="bg-accent text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md active:scale-95 transition-all"><Plus className="w-5 h-5" /> 新增案場</button>
+          <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <h2 className="text-xl font-bold text-slate-800">所有案場列表</h2>
+            <button onClick={() => { setConversionData(null); setShowNewProjectModal(true); }} className="bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> 新增案場</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map(p => (
-              <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer group">
-                <div className="h-40 bg-slate-100 overflow-hidden">
-                  <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-[32px] shadow-sm border border-slate-100 overflow-hidden hover:shadow-xl transition-all cursor-pointer group flex flex-col h-full">
+                <div className="h-48 bg-slate-100 overflow-hidden relative">
+                  <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-black text-slate-800 shadow-sm border border-white/50">{p.currentStage}</div>
                 </div>
-                <div className="p-4">
-                  <h3 className="font-bold text-slate-800 truncate">{p.projectName}</h3>
-                  <p className="text-slate-400 text-sm mt-1">{p.assignedEmployee}</p>
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-bold text-slate-800 line-clamp-1 mb-2 text-lg">{p.projectName}</h3>
+                    <p className="text-slate-400 text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5 rotate-45" /> {p.assignedEmployee}</p>
+                  </div>
                 </div>
               </div>
             ))}
             {projects.length === 0 && (
-              <div className="col-span-full py-20 text-center text-slate-400">目前沒有進行中的案場</div>
+              <div className="col-span-full py-20 text-center text-slate-300 italic font-bold">目前無案場資料</div>
             )}
           </div>
         </div>
@@ -126,8 +128,8 @@ const App: React.FC = () => {
           project={selectedProject} 
           currentUser={currentUser} 
           onBack={() => {
-            setView('projects');
             setSelectedProject(null);
+            setView('projects');
           }} 
           onUpdateProject={async (p) => setDoc(doc(db, "projects", p.id), p)} 
           onDeleteProject={async (id) => {
