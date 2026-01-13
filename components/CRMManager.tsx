@@ -86,23 +86,22 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     return uid.startsWith('U') && uid.length > 20;
   };
 
-  // 一鍵新增客戶：從流量池新增
+  // 優化的一鍵新增：移除 Prompt，直接採用暱稱立案
   const handleQuickAdd = async (lineUser: LineConnection) => {
-    const name = window.prompt("請輸入客戶正式姓名：", lineUser.lineUserId);
-    if (!name) return;
-
+    if (isProcessing) return;
     setIsProcessing(true);
+    
     try {
       const customerId = `cust-${Date.now()}`;
       const newCustomer: Customer = {
         id: customerId,
-        name: name.trim(),
+        name: lineUser.lineUserId.trim(), // 直接使用 LINE 暱稱
         phone: '',
         UserId: lineUser.UserId,
         lineUserId: lineUser.lineUserId,
         linePictureUrl: lineUser.linePictureUrl || '',
         lineConnectionId: lineUser.id,
-        tags: ['來自流量池一鍵新增'],
+        tags: ['流量池一鍵新增'],
         createdAt: Date.now()
       };
 
@@ -114,24 +113,38 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         isBound: true
       });
 
-      alert(`✅ 已成功將「${name}」新增為客戶並完成 LINE 連動`);
+      // 提示一下操作成功，但不阻礙流程
+      console.log("Customer added successfully via one-click");
     } catch (error) {
       console.error(error);
-      alert("❌ 新增失敗，請檢查網路連線");
+      alert("❌ 系統繁忙，請稍後再試");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 解除連動：將客戶資料中的 LINE 資訊清除，並將該 LINE ID 放回流量池
+  // 修復解除連動：確保 UserId 指向正確的文件並回流流量池
   const handleUnlinkLine = async (customer: Customer) => {
-    if (!window.confirm(`確定要解除「${customer.name}」與 LINE 帳號的連動嗎？\n解除後該 LINE 帳號將會重新出現在流量池中。`)) return;
+    if (isProcessing) return;
+    if (!window.confirm(`確定解除「${customer.name}」的 LINE 連動？\n該帳號將重新回流至流量池。`)) return;
 
     setIsProcessing(true);
     try {
       const targetUserId = customer.UserId;
+      const connId = customer.lineConnectionId;
 
-      // 1. 更新客戶資料，清除 LINE 資訊
+      // 1. 在流量池中將對應紀錄設為「未綁定」
+      if (connId) {
+        await updateDoc(doc(db, "line_connections", connId), { isBound: false });
+      } else if (targetUserId) {
+        // 如果沒有 ID，改用 UserId 搜尋
+        const q = query(lineConnectionsCollection, where("UserId", "==", targetUserId));
+        const snap = await getDocs(q);
+        const updates = snap.docs.map(d => updateDoc(doc(db, "line_connections", d.id), { isBound: false }));
+        await Promise.all(updates);
+      }
+
+      // 2. 清除客戶資料中的連動資訊
       await updateDoc(doc(db, "customers", customer.id), {
         UserId: "",
         lineUserId: "",
@@ -139,28 +152,18 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         lineConnectionId: ""
       });
 
-      // 2. 在流量池中找到該 UserId 並將其設為未綁定
-      if (targetUserId) {
-        const q = query(lineConnectionsCollection, where("UserId", "==", targetUserId));
-        const snap = await getDocs(q);
-        const updatePromises = snap.docs.map(d => updateDoc(doc(db, "line_connections", d.id), {
-          isBound: false
-        }));
-        await Promise.all(updatePromises);
-      }
-
-      alert("✅ 已解除連動，該帳號已回到流量池");
+      alert("✅ 已解除連動，帳號已回到流量池");
     } catch (error) {
       console.error(error);
-      alert("❌ 解除連動失敗");
+      alert("❌ 解除連動失敗，請重新整理頁面再試");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 手動連動：將流量池帳號與現有客戶連動
+  // 手動連動現有客戶
   const handleBind = async (lineUser: LineConnection, customer: Customer) => {
-    if (!window.confirm(`確定將 LINE 用戶「${lineUser.lineUserId}」連動到客戶「${customer.name}」？`)) return;
+    if (isProcessing) return;
     setIsProcessing(true);
     try {
       await updateDoc(doc(db, "customers", customer.id), {
@@ -170,7 +173,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         lineConnectionId: lineUser.id
       });
       await updateDoc(doc(db, "line_connections", lineUser.id), { isBound: true });
-      alert("✅ 連動成功！");
+      alert("✅ 已成功連動");
     } catch (e) { 
       alert("連動失敗"); 
     } finally { 
@@ -179,10 +182,10 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   };
 
   const handleDeleteCustomer = async (customer: Customer) => {
-    if (!window.confirm(`確定要永久刪除客戶「${customer.name}」嗎？`)) return;
+    if (isProcessing) return;
+    if (!window.confirm(`確定要永久刪除「${customer.name}」？`)) return;
     setIsProcessing(true);
     try {
-      // 刪除前如果已連動，先釋放流量池
       if (customer.UserId) {
         const q = query(lineConnectionsCollection, where("UserId", "==", customer.UserId));
         const snap = await getDocs(q);
@@ -190,7 +193,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         await Promise.all(updates);
       }
       await deleteDoc(doc(db, "customers", customer.id));
-      alert("✅ 客戶資料已刪除");
+      alert("✅ 資料已移除");
     } catch (e) {
       alert("❌ 刪除失敗");
     } finally {
@@ -205,7 +208,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       await updateDoc(doc(db, "customers", selectedCustomer.id), { name: editNameValue.trim() });
       setShowEditNameModal(false);
       setSelectedCustomer(null);
-      alert("✅ 名稱已更新");
+      alert("✅ 名稱已修正");
     } catch (e) { alert("更新失敗"); } finally { setIsProcessing(false); }
   };
 
@@ -291,7 +294,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
           )) : (
             <div className="col-span-full py-24 text-center">
               <div className="bg-slate-50 inline-flex p-6 rounded-full mb-4 border border-slate-100"><Bot className="w-10 h-10 text-slate-300" /></div>
-              <p className="text-slate-400 text-sm font-medium">流量池目前無新資料</p>
+              <p className="text-slate-400 text-sm font-medium">流量池目前無新對話</p>
             </div>
           )}
         </div>
@@ -360,7 +363,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 預約日曆 (保持不變) */}
+      {/* 預約日曆 (略) */}
       {activeTab === 'reservations' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
@@ -420,7 +423,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 通知日誌 (保持不變) */}
+      {/* 通知日誌 (略) */}
       {activeTab === 'automation' && (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden animate-fade-in">
           <div className="p-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase tracking-widest">
@@ -451,7 +454,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 彈窗區域 */}
+      {/* 彈窗：修改名稱 */}
       {showEditNameModal && (
         <div className="fixed inset-0 z-[500] bg-slate-900/10 backdrop-blur-sm flex items-center justify-center p-4">
            <div className="bg-white rounded-xl border border-slate-200 w-full max-w-sm p-8 shadow-2xl animate-slide-up">
@@ -465,7 +468,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 其他彈窗 (預約、新增客戶) 保持不變，已整合 logic */}
+      {/* 彈窗：建立預約 */}
       {showResModal && (
         <div className="fixed inset-0 z-[400] bg-slate-900/10 backdrop-blur-sm flex items-center justify-center p-4">
            <div className="bg-white rounded-xl border border-slate-200 w-full max-w-md p-8 shadow-2xl animate-slide-up">
@@ -556,6 +559,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
+      {/* 彈窗：新增客戶 */}
       {showAddCustomerModal && (
         <div className="fixed inset-0 z-[400] bg-slate-900/10 backdrop-blur-sm flex items-center justify-center p-4">
            <div className="bg-white rounded-xl border border-slate-200 w-full max-w-sm p-8 shadow-2xl animate-slide-up">
