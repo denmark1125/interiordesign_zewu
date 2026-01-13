@@ -18,44 +18,43 @@ import { Plus, Loader2 } from 'lucide-react';
 export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
 /**
- * 超強健判定函數：確保任何從 LINE 過來的流量都會被鎖定在 JoinPage
+ * 終極判定邏輯：只要網址有 src= 或是在登入回傳過程中，就視為落地頁
  */
-const checkIsLandingPage = () => {
+const getInitialPageMode = () => {
   if (typeof window === 'undefined') return false;
   
+  const url = window.location.href;
   const search = window.location.search;
-  const hash = window.location.hash;
-  const fullUrl = window.location.href;
   
-  // 1. 偵測廣告來源參數 (src= 或 source=)
-  const params = new URLSearchParams(search || hash.split('?')[1]);
-  const src = params.get('src') || params.get('source');
+  // 1. 直接偵測網址是否含有來源標記 (不論是在 search 還是 hash)
+  const isMarketingTraffic = url.includes('src=') || url.includes('source=');
   
-  if (src) {
-    sessionStorage.setItem('zewu_marketing_src', src);
+  if (isMarketingTraffic) {
+    // 嘗試存入 session 作為持久記憶
+    const params = new URLSearchParams(search || url.split('?')[1]);
+    const src = params.get('src') || params.get('source');
+    if (src) sessionStorage.setItem('zewu_marketing_src', src);
     return true;
   }
   
-  // 2. 偵測 LINE 登入回傳特徵 (liff.state, code, 或網址包含 liffId)
-  // 如果網址包含 code 或 liff.state，且我們曾經記過來源，那就維持在 JoinPage
-  if (fullUrl.includes('code=') || fullUrl.includes('liff.state=') || fullUrl.includes('liffRedirectUri')) {
+  // 2. 偵測 LINE 登入回來的狀態 (帶有 code 或 state)
+  // 如果是從 LINE 登入回來的，且我們記得他之前有來源標記，就維持落地頁
+  if (url.includes('code=') || url.includes('liff.state=')) {
     if (sessionStorage.getItem('zewu_marketing_src')) return true;
   }
-  
-  // 3. 備援判定：如果 session 中有來源標記，且還沒完成跳轉官方帳號的，都算是 Landing 狀態
-  if (sessionStorage.getItem('zewu_marketing_src')) {
-    return true;
-  }
+
+  // 3. 檢查 Session 記憶
+  if (sessionStorage.getItem('zewu_marketing_src')) return true;
 
   return false;
 };
 
 const App: React.FC = () => {
-  // 同步初始化狀態
-  const [isJoinPage] = useState(checkIsLandingPage());
+  // 核心狀態：是否為落地頁模式
+  const [isJoinPage] = useState(() => getInitialPageMode());
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(!isJoinPage);
+  const [isLoading, setIsLoading] = useState(!isJoinPage); // 落地頁不顯示 Loading 轉圈
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
   const [lineMetrics, setLineMetrics] = useState<LineMetric[]>([]);
@@ -66,7 +65,7 @@ const App: React.FC = () => {
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
   useEffect(() => {
-    // 落地頁不需要監聽後台數據，節省效能
+    // 如果是落地頁，徹底禁止後台邏輯執行
     if (isJoinPage) return; 
     
     const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
@@ -86,18 +85,18 @@ const App: React.FC = () => {
     };
   }, [isJoinPage]);
 
-  // 如果判定為落地頁，渲染 JoinPage 並終止後續
+  // 如果判定為落地頁，直接回傳 JoinPage
   if (isJoinPage) {
     return <JoinPage />;
   }
 
-  // 管理系統邏輯
+  // --- 以下為管理後台邏輯 (需要登入) ---
   const employeeNames = useMemo(() => users.map(u => u.name), [users]);
 
   if (isLoading) return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
       <Loader2 className="w-10 h-10 text-slate-800 animate-spin" />
-      <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase">System Securing...</p>
+      <p className="text-slate-500 font-bold tracking-widest text-[10px]">後台載入中...</p>
     </div>
   );
   
