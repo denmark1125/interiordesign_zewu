@@ -31,7 +31,7 @@ const ZewuIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// --- 子組件：LIFF 落地頁 (JoinView) ---
+// --- 子組件：LIFF 落地頁 (JoinView / 相當於 JoinPage) ---
 interface JoinViewProps {
   source: string;
 }
@@ -49,6 +49,7 @@ const JoinView: React.FC<JoinViewProps> = ({ source }) => {
 
         if (!liff.isLoggedIn()) {
           setStatus('正在導向登入...');
+          // 跳轉登入，完成後會回到目前的 URL，此時 sessionStorage 已有值
           liff.login({ redirectUri: window.location.href }); 
           return;
         }
@@ -64,18 +65,22 @@ const JoinView: React.FC<JoinViewProps> = ({ source }) => {
           lineUserId: profile.displayName,
           source: source || 'direct',
           pictureUrl: profile.pictureUrl || '',
-          platform: 'ZEWU_CORE_V2',
+          platform: 'ZEWU_LIFF_PRO_V4',
           createdAt: serverTimestamp(),
           lastSeen: Date.now()
         }, { merge: true });
 
-        // 重要：在跳轉前清除 Storage，避免管理員下次訪問首頁被誤認
+        // --- 關鍵清理與跳轉 ---
+        setStatus('追蹤完成，正在進入...');
         sessionStorage.removeItem(STORAGE_KEY);
-
-        setStatus('即將進入官方帳號...');
-        window.location.replace(LINE_OA_URL);
         
-        setTimeout(() => setShowManualBtn(true), 3000);
+        // 延遲一秒跳轉以確保 Firebase 寫入完成
+        setTimeout(() => {
+          window.location.replace(LINE_OA_URL);
+        }, 1000);
+        
+        // 如果自動跳轉失敗，顯示手動按鈕
+        setTimeout(() => setShowManualBtn(true), 4000);
 
       } catch (err: any) {
         console.error('LIFF Error:', err);
@@ -125,47 +130,33 @@ const JoinView: React.FC<JoinViewProps> = ({ source }) => {
 
 // --- 主組件 (App) ---
 const App: React.FC = () => {
-  // 1. 同步攔截與持久化偵測
-  const [marketingSource] = useState<string | null>(() => {
+  // 1. 全域參數攔截 (Global Param Interceptor)
+  const finalSource = useMemo(() => {
     if (typeof window === 'undefined') return null;
     
-    const url = window.location.href;
-    const params = new URLSearchParams(window.location.search);
+    // 步驟 A: 讀取 URL 參數
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlSrc = searchParams.get('src') || searchParams.get('source');
     
-    // 優先權 1: 網址參數 (src= 或 source=)
-    let src = params.get('src') || params.get('source');
+    // 步驟 B: 如果 URL 有參數，立即存入 sessionStorage (持久化)
+    if (urlSrc) {
+      sessionStorage.setItem(STORAGE_KEY, urlSrc);
+      return urlSrc;
+    }
     
-    // 容錯: 如果 URLSearchParams 失敗，使用正則表達式從 href 抓取
-    if (!src && url.includes('src=')) {
-      const match = url.match(/[?&]src=([^&]+)/);
-      if (match) src = decodeURIComponent(match[1]);
-    }
+    // 步驟 C: 如果 URL 沒有參數 (例如 OAuth 跳轉回來)，嘗試從 sessionStorage 讀取
+    return sessionStorage.getItem(STORAGE_KEY);
+  }, []);
 
-    // 如果網址有來源，立即存入 sessionStorage 並回傳
-    if (src) {
-      sessionStorage.setItem(STORAGE_KEY, src);
-      return src;
-    }
+  // 2. 狀態初始化 (Lazy State) - 只要有 source，就認定為 LIFF 模式
+  const [isLiffMode] = useState(() => !!finalSource);
 
-    // 優先權 2: 檢查 sessionStorage (應對 OAuth 跳轉後的狀態)
-    const storedSrc = sessionStorage.getItem(STORAGE_KEY);
-    if (storedSrc) return storedSrc;
-
-    // 優先權 3: 路徑判斷
-    if (window.location.pathname.includes('/join')) return 'direct_join';
-
-    return null;
-  });
-
-  // 判定是否為 LIFF 模式
-  const isLiffMode = !!marketingSource;
-
-  // 早期回傳：防止後台程式碼載入
+  // 3. LIFF 模式早期回傳 (Early Return)
   if (isLiffMode) {
-    return <JoinView source={marketingSource!} />;
+    return <JoinView source={finalSource!} />;
   }
 
-  // --- 後台管理邏輯 ---
+  // --- 後台管理邏輯 (管理員專屬) ---
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('zewu_user');
     return saved ? JSON.parse(saved) : null;
