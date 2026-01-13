@@ -1,16 +1,18 @@
 
 import React, { useState, useMemo } from 'react';
-import { LineMetric, User } from '../types';
+import { LineMetric, User, LineStat } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { MessageCircle, TrendingUp, Users, Plus, Trash2, Calendar, Save, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { db, lineMetricsCollection, setDoc, doc, deleteDoc } from '../services/firebase';
 
+// Fixed: Added autoStats to MarketingDashboardProps to allow passing LineStat data from parent
 interface MarketingDashboardProps {
   metrics: LineMetric[];
+  autoStats?: LineStat[];
   currentUser: User;
 }
 
-const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ metrics, currentUser }) => {
+const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ metrics, autoStats, currentUser }) => {
   const [newCount, setNewCount] = useState<string>('');
   const [newDate, setNewDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isAdding, setIsAdding] = useState(false);

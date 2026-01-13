@@ -10,10 +10,10 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import SystemChangelog from './components/SystemChangelog';
 import MarketingDashboard from './components/MarketingDashboard';
 import CRMManager from './components/CRMManager';
-import { DesignProject, User, ProjectStage, LineMetric, Customer } from './types';
+import { DesignProject, User, ProjectStage, LineMetric, Customer, LineStat } from './types';
 import { INITIAL_USERS } from './constants';
 import { Plus, Loader2 } from 'lucide-react';
-import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy } from './services/firebase';
+import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy, collection } from './services/firebase';
 
 export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
@@ -23,13 +23,13 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
   const [lineMetrics, setLineMetrics] = useState<LineMetric[]>([]);
+  const [lineStats, setLineStats] = useState<LineStat[]>([]);
 
   const [view, setView] = useState<'dashboard' | 'projects' | 'detail' | 'team' | 'analytics' | 'changelog' | 'marketing' | 'crm'>('dashboard');
   const [previousView, setPreviousView] = useState<'dashboard' | 'projects'>('dashboard');
   const [selectedProject, setSelectedProject] = useState<DesignProject | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   
-  // 轉案場緩存
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
   useEffect(() => {
@@ -43,10 +43,15 @@ const App: React.FC = () => {
     const unsubscribeMetrics = onSnapshot(query(lineMetricsCollection, orderBy("date", "asc")), (snapshot) => {
       setLineMetrics(snapshot.docs.map(doc => doc.data() as LineMetric));
     });
+    const unsubscribeStats = onSnapshot(query(collection(db, "line_stats"), orderBy("createdAt", "desc")), (snapshot) => {
+      setLineStats(snapshot.docs.map(doc => doc.data() as LineStat));
+    });
+
     return () => { 
       unsubscribeUsers(); 
       unsubscribeProjects(); 
       unsubscribeMetrics();
+      unsubscribeStats();
     };
   }, []);
 
@@ -59,9 +64,15 @@ const App: React.FC = () => {
   };
 
   const handleSelectProject = (project: DesignProject) => {
-    setPreviousView(view as any);
+    setPreviousView(view === 'detail' ? 'projects' : (view as any));
     setSelectedProject(project);
     setView('detail');
+  };
+
+  // 強化分頁切換：確保切換標籤時清空選中的專案狀態，避免畫面衝突
+  const handleTabChange = (newView: any) => {
+    setSelectedProject(null);
+    setView(newView);
   };
 
   const handleConvertToProject = (customer: Customer) => {
@@ -80,7 +91,7 @@ const App: React.FC = () => {
   return (
     <Layout 
       activeTab={view === 'detail' ? 'projects' : view as any} 
-      onTabChange={setView as any}
+      onTabChange={handleTabChange}
       currentUser={currentUser}
       onLogout={() => {
         setCurrentUser(null);
@@ -90,12 +101,13 @@ const App: React.FC = () => {
     >
       {view === 'dashboard' && <ProjectDashboard projects={projects} onSelectProject={handleSelectProject} employeeNames={employeeNames} onFilterClick={() => setView('projects')} />}
       {view === 'crm' && <CRMManager currentUser={currentUser} onConvertToProject={handleConvertToProject} />}
-      {view === 'marketing' && <MarketingDashboard metrics={lineMetrics} currentUser={currentUser} />}
+      {view === 'marketing' && <MarketingDashboard metrics={lineMetrics} autoStats={lineStats} currentUser={currentUser} />}
       {view === 'changelog' && <SystemChangelog currentUser={currentUser} users={users} />}
       {view === 'team' && <TeamManagement users={users} currentUser={currentUser} onAddUser={(u) => setDoc(doc(db, "users", u.id), u)} onUpdateUser={(u) => setDoc(doc(db, "users", u.id), u)} onDeleteUser={(id) => deleteDoc(doc(db, "users", id))} />}
       {view === 'analytics' && <AnalyticsDashboard projects={projects} />}
       
-      {view === 'projects' && !selectedProject && (
+      {/* 修正點：移除 !selectedProject 的限制條件，確保 view 是 projects 時一定顯示列表 */}
+      {view === 'projects' && (
         <div className="space-y-6 animate-fade-in">
           <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
             <h2 className="text-2xl font-bold text-slate-800">所有案場列表</h2>
@@ -119,7 +131,26 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      {view === 'detail' && selectedProject && <ProjectDetail project={selectedProject} currentUser={currentUser} onBack={() => setView(previousView as any)} onUpdateProject={async (p) => setDoc(doc(db, "projects", p.id), p)} onDeleteProject={async (id) => deleteDoc(doc(db, "projects", id))} employeeNames={employeeNames} />}
+
+      {/* 詳情視圖：在 onBack 時務必清空 selectedProject 資料 */}
+      {view === 'detail' && selectedProject && (
+        <ProjectDetail 
+          project={selectedProject} 
+          currentUser={currentUser} 
+          onBack={() => {
+            setView(previousView as any);
+            setSelectedProject(null); // 重要：返回時必須清空，避免邏輯衝突
+          }} 
+          onUpdateProject={async (p) => setDoc(doc(db, "projects", p.id), p)} 
+          onDeleteProject={async (id) => {
+            await deleteDoc(doc(db, "projects", id));
+            setSelectedProject(null);
+            setView('projects');
+          }} 
+          employeeNames={employeeNames} 
+        />
+      )}
+
       {showNewProjectModal && <NewProjectModal initialData={conversionData} currentUser={currentUser} onClose={() => { setShowNewProjectModal(false); setConversionData(null); }} onSubmit={(p) => { setDoc(doc(db, "projects", p.id), p); setShowNewProjectModal(false); setConversionData(null); }} employeeNames={employeeNames} />}
     </Layout>
   );

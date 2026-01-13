@@ -111,6 +111,14 @@ export interface LineMetric {
   recordedBy: string;
 }
 
+// Fixed: Added missing LineStat interface for automated metrics tracking
+export interface LineStat {
+  id: string;
+  createdAt: number;
+  date: string;
+  followerCount: number;
+}
+
 export interface SystemLog {
   id: string;
   timestamp: number;
