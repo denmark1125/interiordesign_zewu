@@ -10,15 +10,52 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import SystemChangelog from './components/SystemChangelog';
 import MarketingDashboard from './components/MarketingDashboard';
 import CRMManager from './components/CRMManager';
-import { DesignProject, User, LineMetric, Customer } from './types';
+import JoinPage from './JoinPage'; 
+import { DesignProject, User, LineMetric } from './types';
 import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy, collection } from './services/firebase';
 import { Plus, Loader2 } from 'lucide-react';
 
 export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
+/**
+ * 超強健判定函數：確保任何從 LINE 過來的流量都會被鎖定在 JoinPage
+ */
+const checkIsLandingPage = () => {
+  if (typeof window === 'undefined') return false;
+  
+  const search = window.location.search;
+  const hash = window.location.hash;
+  const fullUrl = window.location.href;
+  
+  // 1. 偵測廣告來源參數 (src= 或 source=)
+  const params = new URLSearchParams(search || hash.split('?')[1]);
+  const src = params.get('src') || params.get('source');
+  
+  if (src) {
+    sessionStorage.setItem('zewu_marketing_src', src);
+    return true;
+  }
+  
+  // 2. 偵測 LINE 登入回傳特徵 (liff.state, code, 或網址包含 liffId)
+  // 如果網址包含 code 或 liff.state，且我們曾經記過來源，那就維持在 JoinPage
+  if (fullUrl.includes('code=') || fullUrl.includes('liff.state=') || fullUrl.includes('liffRedirectUri')) {
+    if (sessionStorage.getItem('zewu_marketing_src')) return true;
+  }
+  
+  // 3. 備援判定：如果 session 中有來源標記，且還沒完成跳轉官方帳號的，都算是 Landing 狀態
+  if (sessionStorage.getItem('zewu_marketing_src')) {
+    return true;
+  }
+
+  return false;
+};
+
 const App: React.FC = () => {
+  // 同步初始化狀態
+  const [isJoinPage] = useState(checkIsLandingPage());
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!isJoinPage);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
   const [lineMetrics, setLineMetrics] = useState<LineMetric[]>([]);
@@ -29,6 +66,9 @@ const App: React.FC = () => {
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
   useEffect(() => {
+    // 落地頁不需要監聽後台數據，節省效能
+    if (isJoinPage) return; 
+    
     const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       setUsers(snapshot.docs.map(doc => doc.data() as User));
     });
@@ -44,81 +84,59 @@ const App: React.FC = () => {
       unsubscribeProjects(); 
       unsubscribeMetrics();
     };
-  }, []);
+  }, [isJoinPage]);
 
+  // 如果判定為落地頁，渲染 JoinPage 並終止後續
+  if (isJoinPage) {
+    return <JoinPage />;
+  }
+
+  // 管理系統邏輯
   const employeeNames = useMemo(() => users.map(u => u.name), [users]);
 
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    localStorage.setItem('zewu_user', JSON.stringify(user));
-    setView(user.role !== 'employee' || user.canViewDashboard ? 'dashboard' : 'projects');
-  };
-
-  const handleSelectProject = (project: DesignProject) => {
-    setSelectedProject(project);
-    setView('detail');
-  };
-
-  const handleTabChange = (newView: any) => {
-    setSelectedProject(null); // 重要：切換頁面時清空選中專案，避免 detail 頁面與列表狀態衝突
-    setView(newView);
-  };
-
-  const handleConvertToProject = (customer: Customer) => {
-    setConversionData({
-      projectName: `${customer.name}案`,
-      clientName: customer.name,
-      contactPhone: customer.phone,
-      internalNotes: customer.tags.length > 0 ? `客戶標籤：${customer.tags.join(', ')}` : ''
-    });
-    setShowNewProjectModal(true);
-  };
-
-  if (isLoading) return <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 className="w-10 h-10 text-slate-800 animate-spin" /><p className="text-slate-500 font-bold tracking-widest">澤物系統啟動中...</p></div>;
-  if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
+  if (isLoading) return (
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+      <Loader2 className="w-10 h-10 text-slate-800 animate-spin" />
+      <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase">System Securing...</p>
+    </div>
+  );
+  
+  if (!currentUser) return <LoginScreen onLogin={(user) => setCurrentUser(user)} users={users} />;
 
   return (
     <Layout 
       activeTab={view === 'detail' ? 'projects' : view as any} 
-      onTabChange={handleTabChange}
+      onTabChange={(v) => { setSelectedProject(null); setView(v); }}
       currentUser={currentUser}
-      onLogout={() => {
-        setCurrentUser(null);
-        localStorage.removeItem('zewu_user');
-      }}
+      onLogout={() => { setCurrentUser(null); localStorage.removeItem('zewu_user'); }}
       onExportData={() => {}}
     >
-      {view === 'dashboard' && <ProjectDashboard projects={projects} onSelectProject={handleSelectProject} employeeNames={employeeNames} onFilterClick={() => setView('projects')} />}
-      {view === 'crm' && <CRMManager currentUser={currentUser} onConvertToProject={handleConvertToProject} />}
+      {view === 'dashboard' && <ProjectDashboard projects={projects} onSelectProject={(p) => { setSelectedProject(p); setView('detail'); }} employeeNames={employeeNames} onFilterClick={() => setView('projects')} />}
+      {view === 'crm' && <CRMManager currentUser={currentUser} onConvertToProject={(c) => { setConversionData({ projectName: `${c.name}案`, clientName: c.name, contactPhone: c.phone }); setShowNewProjectModal(true); }} />}
       {view === 'marketing' && <MarketingDashboard metrics={lineMetrics} currentUser={currentUser} />}
       {view === 'changelog' && <SystemChangelog currentUser={currentUser} users={users} />}
       {view === 'team' && <TeamManagement users={users} currentUser={currentUser} onAddUser={(u) => setDoc(doc(db, "users", u.id), u)} onUpdateUser={(u) => setDoc(doc(db, "users", u.id), u)} onDeleteUser={(id) => deleteDoc(doc(db, "users", id))} />}
       {view === 'analytics' && <AnalyticsDashboard projects={projects} />}
       
       {view === 'projects' && !selectedProject && (
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-6 animate-fade-in font-sans">
           <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-            <h2 className="text-xl font-bold text-slate-800">所有案場列表</h2>
-            <button onClick={() => { setConversionData(null); setShowNewProjectModal(true); }} className="bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> 新增案場</button>
+            <h2 className="text-xl font-black text-slate-800">案場列表</h2>
+            <button onClick={() => setShowNewProjectModal(true)} className="bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-black shadow-lg"><Plus className="w-5 h-5" /> 新增案場</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map(p => (
-              <div key={p.id} onClick={() => handleSelectProject(p)} className="bg-white rounded-[32px] shadow-sm border border-slate-100 overflow-hidden hover:shadow-xl transition-all cursor-pointer group flex flex-col h-full">
-                <div className="h-48 bg-slate-100 overflow-hidden relative">
+              <div key={p.id} onClick={() => { setSelectedProject(p); setView('detail'); }} className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden hover:shadow-xl transition-all cursor-pointer group flex flex-col h-full">
+                <div className="h-56 bg-slate-100 overflow-hidden relative">
                   <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-black text-slate-800 shadow-sm border border-white/50">{p.currentStage}</div>
+                  <div className="absolute top-5 right-5 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-black text-slate-800">{p.currentStage}</div>
                 </div>
-                <div className="p-6 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="font-bold text-slate-800 line-clamp-1 mb-2 text-lg">{p.projectName}</h3>
-                    <p className="text-slate-400 text-xs font-medium flex items-center gap-1.5"><Plus className="w-3.5 h-3.5 rotate-45" /> {p.assignedEmployee}</p>
-                  </div>
+                <div className="p-8 flex-1">
+                   <h3 className="font-black text-slate-800 line-clamp-1 mb-2 text-xl">{p.projectName}</h3>
+                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{p.assignedEmployee}</p>
                 </div>
               </div>
             ))}
-            {projects.length === 0 && (
-              <div className="col-span-full py-20 text-center text-slate-300 italic font-bold">目前無案場資料</div>
-            )}
           </div>
         </div>
       )}
@@ -127,16 +145,9 @@ const App: React.FC = () => {
         <ProjectDetail 
           project={selectedProject} 
           currentUser={currentUser} 
-          onBack={() => {
-            setSelectedProject(null);
-            setView('projects');
-          }} 
+          onBack={() => { setSelectedProject(null); setView('projects'); }} 
           onUpdateProject={async (p) => setDoc(doc(db, "projects", p.id), p)} 
-          onDeleteProject={async (id) => {
-            await deleteDoc(doc(db, "projects", id));
-            setSelectedProject(null);
-            setView('projects');
-          }} 
+          onDeleteProject={async (id) => { await deleteDoc(doc(db, "projects", id)); setSelectedProject(null); setView('projects'); }} 
           employeeNames={employeeNames} 
         />
       )}
