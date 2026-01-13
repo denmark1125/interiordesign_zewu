@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
-import { DesignProject, ProjectStage } from '../types';
+// Fixed: Imported ProjectFilterType from shared types
+import { DesignProject, ProjectStage, ProjectFilterType } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { AlertTriangle, CheckCircle, Clock, Briefcase, Filter, ChevronRight, ListChecks, ChevronLeft } from 'lucide-react';
-import { ProjectFilterType } from '../App';
 
 interface DashboardProps {
   projects: DesignProject[];

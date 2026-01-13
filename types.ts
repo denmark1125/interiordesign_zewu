@@ -1,5 +1,9 @@
 
+// Fixed: Defined UserRole as a shared type for consistency
 export type UserRole = 'manager' | 'employee' | 'engineer';
+
+// Fixed: Defined ProjectFilterType for dashboard statistics filtering
+export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
 export enum ProjectStage {
   CONTACT = '接洽中',
@@ -11,39 +15,22 @@ export enum ProjectStage {
   CLOSED_REJECTED = '已結案(未成案)'
 }
 
-export interface LiffVisit {
-  id: string;
-  source: string; 
-  timestamp: number;
-  userId?: string; 
-  userAgent?: string;
-}
-
 export interface Customer {
   id: string;
   name: string;
   phone: string;
-  UserId?: string; 
-  lineUserId?: string; 
+  UserId?: string; // 統一使用 UserId 存放 LINE U-ID (Uxxxx...)
+  lineUserId?: string; // 存放 LINE 的顯示名稱 (暱稱)
   linePictureUrl?: string;
-  lineConnectionId?: string; 
-  source?: string; // 記錄客戶最初來源
+  lineConnectionId?: string; // 用於精準還原到流量池的文件 ID
   tags: string[];
   createdAt: number;
 }
 
-export interface LineMetric {
-  id: string;
-  timestamp: number;
-  date: string;
-  followerCount: number;
-  recordedBy: string;
-}
-
 export interface LineConnection {
   id: string;
-  UserId: string;
-  lineUserId: string;
+  UserId: string; // LINE 原始回傳的 U-ID
+  lineUserId: string; // LINE 顯示名稱 (暱稱)
   linePictureUrl?: string;
   lastMessage?: string;
   timestamp: number;
@@ -54,9 +41,9 @@ export interface Reservation {
   id: string;
   customerId: string;
   customerName: string;
-  UserId?: string;
-  lineUserId?: string;
-  dateTime: string;
+  UserId?: string; // 存放 LINE U-ID
+  lineUserId?: string; // 存放 LINE 暱稱
+  dateTime: string; // ISO String
   type: '諮詢' | '丈量' | '看圖' | '簽約';
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   immediateNotified: boolean;
@@ -117,6 +104,14 @@ export interface DesignProject {
 export interface AIAnalysisResult {
   analysis: string;
   suggestions: string[];
+}
+
+export interface LineMetric {
+  id: string;
+  timestamp: number;
+  date: string;
+  followerCount: number;
+  recordedBy: string;
 }
 
 export interface SystemLog {
