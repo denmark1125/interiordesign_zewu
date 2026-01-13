@@ -10,7 +10,7 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import SystemChangelog from './components/SystemChangelog';
 import MarketingDashboard from './components/MarketingDashboard';
 import CRMManager from './components/CRMManager';
-import { DesignProject, User, LineMetric } from './types';
+import { DesignProject, User, LineMetric, ProjectStage } from './types';
 import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy } from './services/firebase';
 import { serverTimestamp } from 'firebase/firestore';
 import { Plus, Loader2, MessageCircle, ExternalLink } from 'lucide-react';
@@ -30,7 +30,7 @@ const ZewuIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// --- 子組件 1：LIFF 落地頁 (JoinView) ---
+// --- 子組件：LIFF 落地頁 (JoinView) ---
 const JoinView: React.FC = () => {
   const [status, setStatus] = useState('正在初始化...');
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +39,11 @@ const JoinView: React.FC = () => {
   useEffect(() => {
     const initLiff = async () => {
       try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const source = urlParams.get('src') || urlParams.get('source') || 'direct';
+        const url = window.location.href;
+        const params = new URLSearchParams(window.location.search);
+        // 如果 search 沒抓到（可能是 hash router），改從 href 抓
+        const source = params.get('src') || params.get('source') || 
+                      (url.includes('src=') ? url.split('src=')[1].split('&')[0] : 'direct');
 
         setStatus('正在連接 LINE...');
         await liff.init({ liffId: MY_LIFF_ID });
@@ -54,25 +57,28 @@ const JoinView: React.FC = () => {
         setStatus('正在同步追蹤數據...');
         const profile = await liff.getProfile();
 
+        // 寫入 Firestore 追蹤
         const userSourceRef = doc(db, "user_sources", profile.userId);
         await setDoc(userSourceRef, {
           userId: profile.userId,
           displayName: profile.displayName,
           lineUserId: profile.displayName,
-          source: source,
+          source: decodeURIComponent(source),
           pictureUrl: profile.pictureUrl || '',
-          platform: 'VITE_LIFF_BRIDGE',
+          platform: 'ZEWU_VITE_CORE',
           createdAt: serverTimestamp(),
           lastSeen: Date.now()
         }, { merge: true });
 
         setStatus('即將進入官方帳號...');
         window.location.replace(LINE_OA_URL);
+        
+        // 保險機制：如果三秒後還沒跳轉成功
         setTimeout(() => setShowManualBtn(true), 3000);
 
       } catch (err: any) {
         console.error('LIFF Error:', err);
-        setError('系統處理中，請手動加入好友');
+        setError('系統處理中，請點擊下方按鈕');
         setShowManualBtn(true);
       }
     };
@@ -115,20 +121,29 @@ const JoinView: React.FC = () => {
 
 // --- 主組件 (App) ---
 const App: React.FC = () => {
-  // 1. 路由分流判斷
-  const [isJoinMode, setIsJoinMode] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hasSource = params.has('src') || params.has('source');
-    const isJoinPath = window.location.pathname.includes('/join');
-    if (hasSource || isJoinPath) {
-      setIsJoinMode(true);
+  // 1. 同步攔截 (Synchronous Hijacking)
+  // 使用惰性初始化，在組件掛載前立即判斷模式
+  const [isLiffMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const url = window.location.href;
+      // 只要網址包含 src=, source= 或路徑含有 join 則視為 LIFF 模式
+      return url.includes('src=') || url.includes('source=') || url.includes('/join');
     }
-  }, []);
+    return false;
+  });
 
-  // 2. 後台管理狀態
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // 2. LIFF 模式早期回傳 (Early Return)
+  // 這能防止後台組件、Firebase 監聽器被初始化
+  if (isLiffMode) {
+    return <JoinView />;
+  }
+
+  // --- 以下為後台管理系統邏輯 (只有管理員會看到) ---
+
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('zewu_user');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
@@ -139,10 +154,8 @@ const App: React.FC = () => {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
-  // 3. 資料監聽 (僅在後台模式)
+  // 資料監聽
   useEffect(() => {
-    if (isJoinMode) return;
-
     const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ ...doc.data() as User, id: doc.id })));
     });
@@ -161,27 +174,31 @@ const App: React.FC = () => {
       unsubscribeProjects(); 
       unsubscribeMetrics();
     };
-  }, [isJoinMode]);
+  }, []);
 
   const employeeNames = useMemo(() => users.map(u => u.name), [users]);
 
-  // --- 渲染分流 ---
-
-  // 渲染 LIFF 落地頁
-  if (isJoinMode) return <JoinView />;
-
-  // 渲染後台 Loading
+  // 管理後台渲染邏輯
   if (isLoading) return (
-    <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4 font-sans">
-      <Loader2 className="w-10 h-10 text-slate-800 animate-spin" />
-      <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase">後台系統同步中...</p>
+    <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4 font-sans text-center">
+      <div className="w-12 h-12 relative">
+        <ZewuIcon className="w-12 h-12 text-slate-200" />
+        <Loader2 className="w-12 h-12 text-slate-800 animate-spin absolute top-0 left-0" />
+      </div>
+      <p className="text-slate-400 font-bold tracking-widest text-[10px] uppercase mt-2">安全加密同步中...</p>
     </div>
   );
   
-  // 渲染登入畫面
-  if (!currentUser) return <LoginScreen onLogin={(user) => setCurrentUser(user)} users={users} />;
+  if (!currentUser) return (
+    <LoginScreen 
+      onLogin={(user) => {
+        setCurrentUser(user);
+        localStorage.setItem('zewu_user', JSON.stringify(user));
+      }} 
+      users={users} 
+    />
+  );
 
-  // 渲染主要管理介面
   return (
     <Layout 
       activeTab={view === 'detail' ? 'projects' : view as any} 
@@ -200,8 +217,8 @@ const App: React.FC = () => {
       {view === 'projects' && !selectedProject && (
         <div className="space-y-6 animate-fade-in font-sans">
           <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-            <h2 className="text-xl font-black text-slate-800">案場列表</h2>
-            <button onClick={() => setShowNewProjectModal(true)} className="bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-black shadow-lg"><Plus className="w-5 h-5" /> 新增案場</button>
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">案場列表</h2>
+            <button onClick={() => setShowNewProjectModal(true)} className="bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-black shadow-lg hover:bg-slate-700 transition-all"><Plus className="w-5 h-5" /> 新增案場</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map(p => (
@@ -211,7 +228,7 @@ const App: React.FC = () => {
                   <div className="absolute top-5 right-5 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-black text-slate-800">{p.currentStage}</div>
                 </div>
                 <div className="p-8 flex-1">
-                   <h3 className="font-black text-slate-800 line-clamp-1 mb-2 text-xl">{p.projectName}</h3>
+                   <h3 className="font-black text-slate-800 line-clamp-1 mb-2 text-xl tracking-tight">{p.projectName}</h3>
                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{p.assignedEmployee}</p>
                 </div>
               </div>
