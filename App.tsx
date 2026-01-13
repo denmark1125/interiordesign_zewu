@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Layout from './components/Layout';
 import ProjectDashboard from './components/SiteDashboard';
 import ProjectDetail from './components/SiteDetail';
@@ -10,11 +10,11 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import SystemChangelog from './components/SystemChangelog';
 import MarketingDashboard from './components/MarketingDashboard';
 import CRMManager from './components/CRMManager';
-import { DesignProject, User, ProjectStage, LineMetric, Customer, LineStat } from './types';
-import { INITIAL_USERS } from './constants';
-import { Plus, Loader2 } from 'lucide-react';
+import { DesignProject, User, LineMetric, Customer } from './types';
 import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy, collection } from './services/firebase';
+import { Plus, Loader2 } from 'lucide-react';
 
+// Fixed: Defined and exported ProjectFilterType to resolve the "Module has no exported member" error in SiteDashboard.tsx
 export type ProjectFilterType = 'ALL' | 'CONSTRUCTION' | 'DESIGN_CONTACT' | 'UPCOMING';
 
 const App: React.FC = () => {
@@ -23,13 +23,10 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<DesignProject[]>([]);
   const [lineMetrics, setLineMetrics] = useState<LineMetric[]>([]);
-  const [lineStats, setLineStats] = useState<LineStat[]>([]);
 
   const [view, setView] = useState<'dashboard' | 'projects' | 'detail' | 'team' | 'analytics' | 'changelog' | 'marketing' | 'crm'>('dashboard');
-  const [previousView, setPreviousView] = useState<'dashboard' | 'projects'>('dashboard');
   const [selectedProject, setSelectedProject] = useState<DesignProject | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
   useEffect(() => {
@@ -43,15 +40,10 @@ const App: React.FC = () => {
     const unsubscribeMetrics = onSnapshot(query(lineMetricsCollection, orderBy("date", "asc")), (snapshot) => {
       setLineMetrics(snapshot.docs.map(doc => doc.data() as LineMetric));
     });
-    const unsubscribeStats = onSnapshot(query(collection(db, "line_stats"), orderBy("createdAt", "desc")), (snapshot) => {
-      setLineStats(snapshot.docs.map(doc => doc.data() as LineStat));
-    });
-
     return () => { 
       unsubscribeUsers(); 
       unsubscribeProjects(); 
       unsubscribeMetrics();
-      unsubscribeStats();
     };
   }, []);
 
@@ -64,12 +56,10 @@ const App: React.FC = () => {
   };
 
   const handleSelectProject = (project: DesignProject) => {
-    setPreviousView(view === 'detail' ? 'projects' : (view as any));
     setSelectedProject(project);
     setView('detail');
   };
 
-  // 強化分頁切換：確保切換標籤時清空選中的專案狀態，避免畫面衝突
   const handleTabChange = (newView: any) => {
     setSelectedProject(null);
     setView(newView);
@@ -85,7 +75,7 @@ const App: React.FC = () => {
     setShowNewProjectModal(true);
   };
 
-  if (isLoading) return <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 className="w-10 h-10 text-accent animate-spin" /><p className="text-slate-500 font-bold">同步中...</p></div>;
+  if (isLoading) return <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4"><Loader2 className="w-10 h-10 text-accent animate-spin" /><p className="text-slate-500 font-bold">澤物系統啟動中...</p></div>;
   if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
 
   return (
@@ -101,12 +91,11 @@ const App: React.FC = () => {
     >
       {view === 'dashboard' && <ProjectDashboard projects={projects} onSelectProject={handleSelectProject} employeeNames={employeeNames} onFilterClick={() => setView('projects')} />}
       {view === 'crm' && <CRMManager currentUser={currentUser} onConvertToProject={handleConvertToProject} />}
-      {view === 'marketing' && <MarketingDashboard metrics={lineMetrics} autoStats={lineStats} currentUser={currentUser} />}
+      {view === 'marketing' && <MarketingDashboard metrics={lineMetrics} currentUser={currentUser} />}
       {view === 'changelog' && <SystemChangelog currentUser={currentUser} users={users} />}
       {view === 'team' && <TeamManagement users={users} currentUser={currentUser} onAddUser={(u) => setDoc(doc(db, "users", u.id), u)} onUpdateUser={(u) => setDoc(doc(db, "users", u.id), u)} onDeleteUser={(id) => deleteDoc(doc(db, "users", id))} />}
       {view === 'analytics' && <AnalyticsDashboard projects={projects} />}
       
-      {/* 修正點：移除 !selectedProject 的限制條件，確保 view 是 projects 時一定顯示列表 */}
       {view === 'projects' && (
         <div className="space-y-6 animate-fade-in">
           <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
@@ -132,14 +121,13 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 詳情視圖：在 onBack 時務必清空 selectedProject 資料 */}
       {view === 'detail' && selectedProject && (
         <ProjectDetail 
           project={selectedProject} 
           currentUser={currentUser} 
           onBack={() => {
-            setView(previousView as any);
-            setSelectedProject(null); // 重要：返回時必須清空，避免邏輯衝突
+            setView('projects');
+            setSelectedProject(null);
           }} 
           onUpdateProject={async (p) => setDoc(doc(db, "projects", p.id), p)} 
           onDeleteProject={async (id) => {

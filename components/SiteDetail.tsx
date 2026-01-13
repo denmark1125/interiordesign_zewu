@@ -1,10 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
-import { DesignProject, ProjectStage, HistoryLog, User, ScheduleItem, AIAnalysisResult } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { DesignProject, ProjectStage, HistoryLog, User, ScheduleItem } from '../types';
 import { CONSTRUCTION_PHASES } from '../constants';
-import { generateProjectReport, analyzeDesignIssue } from '../services/geminiService';
-// Added missing Users icon import
-import { ArrowLeft, Phone, Save, FileText, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, CheckCircle, AlertTriangle, Calendar, Clock, Camera, Share, Edit, X, ChevronLeft, ChevronRight, Eye, Plus, Users } from 'lucide-react';
+import { ArrowLeft, Save, Send, MapPin, History, PlusCircle, Trash2, Sparkles, Loader2, Calendar, Clock, Share, LayoutList, CheckCircle2, Bot, Download, User as UserIcon } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { db, updateDoc, doc } from '../services/firebase';
 
@@ -17,216 +15,264 @@ interface ProjectDetailProps {
   employeeNames: string[];
 }
 
-const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onBack, onUpdateProject, onDeleteProject, employeeNames }) => {
+const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onBack, onUpdateProject, employeeNames }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'schedule' | 'ai'>('details');
   const [formData, setFormData] = useState<DesignProject>(project);
-  
   const [progressCategory, setProgressCategory] = useState<string>(CONSTRUCTION_PHASES[0]);
   const [progressDescription, setProgressDescription] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setFormData({
-      ...project,
-      history: project.history || []
-    });
+    setFormData({ ...project, history: project.history || [], schedule: project.schedule || [] });
   }, [project]);
 
   const handleInputChange = (field: keyof DesignProject, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAddProgress = async () => {
-    if (!progressDescription.trim()) { alert('請輸入進度內容'); return; }
+  const handleSaveAll = async () => {
     setIsSaving(true);
+    try {
+      const updatedData = { ...formData, lastUpdatedTimestamp: Date.now() };
+      await updateDoc(doc(db, "projects", formData.id), updatedData);
+      onUpdateProject(updatedData);
+      alert('所有變更已儲存');
+    } catch (e) {
+      alert('儲存失敗');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
+  const handleAddLog = async () => {
+    if (!progressDescription.trim()) return;
+    setIsSaving(true);
     const timestamp = Date.now();
-    const newNote = `【${progressCategory}】${progressDescription}`;
-
     const newLog: HistoryLog = {
       id: `h-${timestamp}`,
-      timestamp: timestamp,
+      timestamp,
       userId: currentUser.id,
       userName: currentUser.name,
       action: progressCategory,
       details: progressDescription,
       field: 'latestProgressNotes',
-      oldValue: formData.latestProgressNotes,
-      newValue: newNote
+      newValue: `【${progressCategory}】${progressDescription}`
     };
-
-    const currentHistory = formData.history || [];
-    const updatedHistory = [newLog, ...currentHistory];
-
+    const updatedHistory = [newLog, ...(formData.history || [])];
+    const updatedData = { ...formData, history: updatedHistory, latestProgressNotes: newLog.newValue, lastUpdatedTimestamp: timestamp };
+    
     try {
-      const projectRef = doc(db, "projects", formData.id);
-      await updateDoc(projectRef, {
-        latestProgressNotes: newNote,
-        lastUpdatedTimestamp: timestamp,
-        history: updatedHistory
-      });
-      
-      const finalProject = {
-        ...formData,
-        latestProgressNotes: newNote,
-        lastUpdatedTimestamp: timestamp,
-        history: updatedHistory
-      };
-      
-      setFormData(finalProject);
-      onUpdateProject(finalProject);
+      await updateDoc(doc(db, "projects", formData.id), updatedData);
+      setFormData(updatedData);
+      onUpdateProject(updatedData);
       setProgressDescription('');
-      alert('施工日誌已成功寫入資料庫！');
+      alert('施工日誌已發布');
     } catch (e) {
-      console.error("Save log error:", e);
-      alert('寫入失敗，請確認網路連線');
+      alert('發布失敗');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleSaveGeneral = async () => {
-    setIsSaving(true);
-    try {
-      const updatedData = { ...formData, lastUpdatedTimestamp: Date.now() };
-      const projectRef = doc(db, "projects", formData.id);
-      await updateDoc(projectRef, updatedData);
-      onUpdateProject(updatedData);
-      alert('基本資料已更新');
-    } catch (e) {
-      alert('更新失敗');
-    } finally {
-      setIsSaving(false);
-    }
+  const exportToImage = async () => {
+    if (!detailRef.current) return;
+    const canvas = await html2canvas(detailRef.current, { scale: 2, useCORS: true });
+    const link = document.createElement('a');
+    link.download = `${formData.projectName}_專案報告.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
   };
 
   const sortedHistory = [...(formData.history || [])].sort((a, b) => b.timestamp - a.timestamp);
-
-  const inputClass = "w-full bg-slate-50 border border-slate-300 rounded-2xl p-4 text-slate-900 font-bold outline-none focus:ring-4 focus:ring-slate-800/5 transition-all";
+  const inputClass = "w-full bg-white border border-slate-200 rounded-xl p-3 text-slate-800 font-medium outline-none focus:ring-2 focus:ring-slate-100 transition-all text-sm";
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-20 animate-slide-up">
-      <div className="relative h-72 rounded-[48px] overflow-hidden shadow-2xl group border-[6px] border-white ring-1 ring-slate-200">
-        <img src={formData.imageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-1000" />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent"></div>
-        <div className="absolute bottom-0 left-0 p-12 text-white w-full">
-           <h1 className="text-4xl font-black mb-4 drop-shadow-lg">{formData.projectName}</h1>
-           <div className="flex flex-wrap items-center gap-8 opacity-90">
-             <p className="text-sm font-black flex items-center gap-2 bg-black/30 backdrop-blur-md px-4 py-2 rounded-full border border-white/20"><MapPin className="w-4 h-4 text-accent"/> {formData.address || '未填寫案址'}</p>
-             <p className="text-sm font-black flex items-center gap-2 bg-black/30 backdrop-blur-md px-4 py-2 rounded-full border border-white/20"><Users className="w-4 h-4 text-[#06C755]"/> 客戶：{formData.clientName}</p>
-           </div>
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center bg-white p-5 rounded-[32px] border border-slate-100 shadow-xl">
-         <button onClick={onBack} className="px-6 py-4 bg-slate-50 hover:bg-slate-100 rounded-2xl text-slate-800 font-black flex items-center gap-3 text-sm transition-all active:scale-95"><ArrowLeft className="w-5 h-5" /> 返回列表</button>
+    <div className="space-y-6 max-w-7xl mx-auto pb-20 animate-fade-in" ref={detailRef}>
+      
+      {/* 頂部操作列 */}
+      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm sticky top-0 z-20">
+         <button onClick={onBack} className="px-4 py-2 hover:bg-slate-50 rounded-lg text-slate-600 font-bold flex items-center gap-2 text-sm transition-all">
+           <ArrowLeft className="w-4 h-4" /> 返回列表
+         </button>
          <div className="flex gap-3">
-            <button onClick={handleSaveGeneral} disabled={isSaving} className="bg-slate-800 text-white px-10 py-4 rounded-2xl flex items-center gap-2 shadow-2xl shadow-slate-200 font-black text-sm active:scale-95 transition-all disabled:opacity-50">
-               {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 
-               更新專案詳情
+            <button onClick={exportToImage} className="px-4 py-2 bg-slate-800 text-white rounded-lg flex items-center gap-2 font-bold text-sm hover:bg-slate-700 transition-all">
+               <Download className="w-4 h-4" /> 匯出圖片
+            </button>
+            <button onClick={handleSaveAll} disabled={isSaving} className="px-4 py-2 bg-emerald-600 text-white rounded-lg flex items-center gap-2 font-bold text-sm hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100">
+               {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 儲存變更
             </button>
          </div>
       </div>
 
-      <div className="flex gap-2 bg-slate-200/40 p-1.5 rounded-2xl w-fit border border-slate-100 backdrop-blur-sm">
-        <button onClick={() => setActiveTab('details')} className={`px-10 py-3.5 rounded-xl text-sm font-black transition-all ${activeTab === 'details' ? 'bg-white shadow-md text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>日誌與動態</button>
-        <button onClick={() => setActiveTab('schedule')} className={`px-10 py-3.5 rounded-xl text-sm font-black transition-all ${activeTab === 'schedule' ? 'bg-white shadow-md text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>工程進度排程</button>
+      {/* 封面大圖 */}
+      <div className="relative h-64 sm:h-80 rounded-[32px] overflow-hidden shadow-lg border-4 border-white">
+        <img src={formData.imageUrl} className="w-full h-full object-cover" alt="Cover" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+        <div className="absolute bottom-0 left-0 p-8 text-white w-full">
+           <h1 className="text-3xl font-black mb-2">{formData.projectName}</h1>
+           <div className="flex flex-wrap items-center gap-4 text-xs font-bold opacity-90">
+             <span className="flex items-center gap-1.5"><UserIcon className="w-3.5 h-3.5" /> {formData.clientName}</span>
+             <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {formData.address || '未填寫案址'}</span>
+             <span className="bg-blue-600 px-3 py-1 rounded-md">{formData.currentStage}</span>
+           </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
+      {/* 分頁 Tab */}
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+        <button onClick={() => setActiveTab('details')} className={`px-6 py-2.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'details' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>專案執行與日誌</button>
+        <button onClick={() => setActiveTab('schedule')} className={`px-6 py-2.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'schedule' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>工程進度表</button>
+        <button onClick={() => setActiveTab('ai')} className={`px-6 py-2.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'ai' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>AI 智能助理</button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 左側內容區 */}
+        <div className="lg:col-span-2 space-y-6">
           {activeTab === 'details' && (
             <>
-              <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 p-10">
-                <h3 className="font-black text-slate-800 mb-8 flex items-center gap-3 text-xl"><PlusCircle className="w-7 h-7 text-[#06C755]"/> 發布施工日誌</h3>
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                     <div>
-                        <label className="text-[11px] font-black text-slate-400 uppercase mb-3 block tracking-widest">工種/分類</label>
-                        <select value={progressCategory} onChange={(e) => setProgressCategory(e.target.value)} className={`${inputClass} appearance-none cursor-pointer`}>
-                          {CONSTRUCTION_PHASES.map(phase => <option key={phase} value={phase}>{phase}</option>)}
-                        </select>
-                     </div>
-                  </div>
+              {/* 新增日誌卡片 */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-amber-600"/> 新增施工日誌</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="text-[11px] font-black text-slate-400 uppercase mb-3 block tracking-widest">進度描述</label>
-                    <textarea rows={5} placeholder="請輸入今日現場狀況、施工進度或待辦事項..." value={progressDescription} onChange={(e) => setProgressDescription(e.target.value)} className={`${inputClass} leading-relaxed`} />
+                    <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">施工階段/類別</label>
+                    <select value={progressCategory} onChange={(e) => setProgressCategory(e.target.value)} className={inputClass}>
+                      {CONSTRUCTION_PHASES.map(phase => <option key={phase} value={phase}>{phase}</option>)}
+                    </select>
                   </div>
-                  <div className="flex justify-end">
-                    <button onClick={handleAddProgress} disabled={isSaving} className="bg-[#06C755] text-white px-12 py-5 rounded-3xl font-black shadow-2xl shadow-green-500/20 active:scale-95 transition-all flex items-center gap-3">
-                       {isSaving ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5" />} 
-                       確認發布日誌
-                    </button>
-                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">進度詳情</label>
+                  <textarea rows={4} placeholder="請輸入今日施工項目、完成進度或現場狀況..." value={progressDescription} onChange={(e) => setProgressDescription(e.target.value)} className={inputClass} />
+                </div>
+                <div className="flex justify-end mt-4">
+                  <button onClick={handleAddLog} disabled={isSaving} className="bg-amber-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-amber-100 active:scale-95 transition-all flex items-center gap-2">
+                    <Send className="w-4 h-4" /> 發布日誌
+                  </button>
                 </div>
               </div>
 
-              <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 p-12">
-                <h3 className="font-black text-slate-800 mb-12 flex items-center gap-3 text-xl"><History className="w-7 h-7 text-slate-300" /> 專案執行時間軸</h3>
-                <div className="space-y-12 relative">
-                  <div className="absolute left-5 top-2 bottom-2 w-0.5 bg-slate-100"></div>
+              {/* 時間軸 */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                <h3 className="font-bold text-slate-800 mb-8 flex items-center gap-2"><History className="w-5 h-5 text-slate-400" /> 專案時間軸 (Timeline)</h3>
+                <div className="space-y-6 relative pl-4 border-l-2 border-slate-50">
                   {sortedHistory.length > 0 ? sortedHistory.map((log) => (
-                    <div key={log.id} className="relative pl-16 group">
-                      <div className="absolute left-0 top-1 w-10 h-10 rounded-[14px] bg-slate-800 text-white shadow-xl z-10 flex items-center justify-center font-black text-xs">{log.userName.charAt(0)}</div>
-                      <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-100 group-hover:bg-slate-100/50 group-hover:border-slate-200 transition-all">
-                        <div className="flex justify-between items-center mb-5">
-                            <span className="text-[10px] font-black text-white bg-slate-800 px-4 py-1.5 rounded-full uppercase tracking-widest">{log.action}</span>
-                            <span className="text-[11px] text-slate-400 font-bold flex items-center gap-2"><Clock className="w-4 h-4"/> {new Date(log.timestamp).toLocaleString()}</span>
+                    <div key={log.id} className="relative pl-6">
+                      <div className="absolute -left-[29px] top-1 bg-white border-2 border-slate-300 w-4 h-4 rounded-full"></div>
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">{log.action}</span>
+                            <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1"><Clock className="w-3 h-3"/> {new Date(log.timestamp).toLocaleString()}</span>
                         </div>
-                        <p className="text-base text-slate-700 leading-relaxed font-bold">{log.details}</p>
-                        <div className="mt-6 pt-5 border-t border-slate-200/50 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                               <div className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white"></div>
-                               <p className="text-[11px] text-slate-400 font-black tracking-widest">記錄人員：{log.userName}</p>
-                            </div>
-                            {currentUser.role === 'manager' && (
-                               <button onClick={() => { if(window.confirm("刪除此日誌？")) {
-                                   const newHist = formData.history.filter(h => h.id !== log.id);
-                                   const projectRef = doc(db, "projects", formData.id);
-                                   updateDoc(projectRef, { history: newHist });
-                                   setFormData({...formData, history: newHist});
-                               }}} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 className="w-4 h-4"/></button>
-                            )}
+                        <p className="text-sm text-slate-700 leading-relaxed font-medium">{log.details}</p>
+                        <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-400">
+                           <div className="w-4 h-4 rounded-full bg-slate-200"></div>
+                           <span>記錄人員：{log.userName}</span>
                         </div>
                       </div>
                     </div>
                   )) : (
-                    <div className="text-center py-32 text-slate-200 italic font-black">
-                       <History className="w-20 h-20 mx-auto mb-6 opacity-5" />
-                       <p className="text-lg">尚無日誌紀錄，等待您的第一筆發布</p>
-                    </div>
+                    <div className="text-center py-10 text-slate-300 italic text-sm">尚無任何日誌紀錄</div>
                   )}
                 </div>
               </div>
             </>
           )}
+
+          {activeTab === 'schedule' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
+               <div className="flex justify-between items-center mb-8">
+                  <div className="flex items-center gap-3">
+                     <div className="p-3 bg-amber-50 rounded-xl"><Calendar className="w-6 h-6 text-amber-600" /></div>
+                     <div>
+                        <h3 className="font-bold text-slate-800 text-lg">工程進度時程表</h3>
+                        <p className="text-xs text-slate-400">檢視與安排各施工階段工期。</p>
+                     </div>
+                  </div>
+                  <button className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-2"><LayoutList className="w-4 h-4"/> 修改排程</button>
+               </div>
+               
+               {/* 模擬日曆視圖 (如截圖) */}
+               <div className="border border-slate-100 rounded-2xl p-6 bg-slate-50/30">
+                  <div className="flex justify-between items-center mb-6">
+                     <span className="font-bold text-slate-700 flex items-center gap-2"><Calendar className="w-4 h-4 text-slate-400"/> 2026年 1月 施工行事曆</span>
+                     <div className="flex gap-2">
+                        <button className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors"><Clock className="w-4 h-4 text-slate-400" /></button>
+                        <button className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors"><Clock className="w-4 h-4 text-slate-400 rotate-180" /></button>
+                     </div>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 text-center">
+                     {['日','一','二','三','四','五','六'].map(d => <div key={d} className="text-[10px] font-bold text-slate-400 py-2 uppercase">{d}</div>)}
+                     {Array.from({length: 4}).map((_, i) => <div key={`e-${i}`} className="h-14"></div>)}
+                     {Array.from({length: 31}).map((_, i) => (
+                       <div key={i} className={`h-14 border border-slate-100 rounded-lg flex flex-col items-center justify-center text-xs font-bold ${i+1 === 13 ? 'bg-slate-800 text-white' : 'bg-white text-slate-400'}`}>
+                          {i+1}
+                       </div>
+                     ))}
+                  </div>
+                  <div className="mt-6 flex justify-end gap-4 text-[10px] font-bold text-slate-400">
+                     <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div> 有施工安排</span>
+                  </div>
+               </div>
+               
+               <div className="mt-10 py-16 border-2 border-dashed border-slate-100 rounded-3xl text-center">
+                  <p className="text-slate-300 font-bold mb-2">目前尚未安排施工時程</p>
+                  <p className="text-amber-600 font-black cursor-pointer hover:underline">點擊開始安排工期</p>
+               </div>
+            </div>
+          )}
+
+          {activeTab === 'ai' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 text-center">
+               <Bot className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+               <h3 className="font-bold text-slate-800 mb-2">AI 智能助理</h3>
+               <p className="text-sm text-slate-400 mb-6">正在分析案場歷史資料，為您提供專屬建議...</p>
+               <button className="bg-slate-800 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg flex items-center gap-2 mx-auto"><Sparkles className="w-4 h-4"/> 啟動 AI 診斷</button>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-8">
-           <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 p-10">
-              <h3 className="font-black text-slate-400 text-[11px] uppercase mb-10 tracking-widest border-b border-slate-50 pb-5">案場基本管控</h3>
-              <div className="space-y-10">
-                 <div>
-                    <label className="block text-[11px] font-black text-slate-500 uppercase mb-4 tracking-widest">當前案場階段</label>
-                    <select className={inputClass} value={formData.currentStage} onChange={e => handleInputChange('currentStage', e.target.value)}>
-                        {Object.values(ProjectStage).map(stage => <option key={stage} value={stage}>{stage}</option>)}
-                    </select>
+        {/* 右側側邊欄 */}
+        <div className="space-y-6">
+           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+              <h3 className="font-bold text-slate-800 mb-6 text-sm">專案負責人</h3>
+              <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                 <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center font-bold text-slate-400 border border-slate-200 shadow-sm">
+                    {formData.assignedEmployee.charAt(0)}
                  </div>
                  <div>
-                    <label className="block text-[11px] font-black text-slate-500 uppercase mb-4 tracking-widest">客戶聯絡資訊</label>
-                    <div className="relative group">
-                       <Phone className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-slate-800 transition-colors" />
-                       <input type="text" value={formData.contactPhone} onChange={e => handleInputChange('contactPhone', e.target.value)} className={`${inputClass} pl-14`} />
-                    </div>
+                    <h4 className="font-bold text-slate-800">{formData.assignedEmployee}</h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Lead Designer</p>
                  </div>
-                 <div>
-                    <label className="block text-[11px] font-black text-slate-500 uppercase mb-4 tracking-widest">專案主責人</label>
-                    <div className="p-5 bg-slate-50 rounded-2xl font-black border border-slate-100 text-slate-700 text-sm shadow-inner">{formData.assignedEmployee}</div>
-                 </div>
-                 <div>
-                    <label className="block text-[11px] font-black text-slate-500 uppercase mb-4 tracking-widest">目標完工日期</label>
-                    <input type="date" value={formData.estimatedCompletionDate} onChange={e => handleInputChange('estimatedCompletionDate', e.target.value)} className={inputClass} />
-                 </div>
+              </div>
+              <div className="mt-6">
+                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">重新指派</label>
+                 <select className={inputClass} value={formData.assignedEmployee} onChange={e => handleInputChange('assignedEmployee', e.target.value)}>
+                    {employeeNames.map(name => <option key={name} value={name}>{name}</option>)}
+                 </select>
+              </div>
+           </div>
+
+           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
+              <h3 className="font-bold text-slate-800 mb-2 text-sm">專案基本資料</h3>
+              <div>
+                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">目前階段</label>
+                 <select className={inputClass} value={formData.currentStage} onChange={e => handleInputChange('currentStage', e.target.value)}>
+                    {Object.values(ProjectStage).map(stage => <option key={stage} value={stage}>{stage}</option>)}
+                 </select>
+              </div>
+              <div>
+                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">預計完工日</label>
+                 <input type="date" value={formData.estimatedCompletionDate} onChange={e => handleInputChange('estimatedCompletionDate', e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">客戶需求 (Client Requests)</label>
+                 <textarea rows={4} value={formData.clientRequests} onChange={e => handleInputChange('clientRequests', e.target.value)} className={inputClass} placeholder="輸入業主特殊要求..." />
+              </div>
+              <div>
+                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">內部備註</label>
+                 <textarea rows={3} value={formData.internalNotes} onChange={e => handleInputChange('internalNotes', e.target.value)} className={inputClass} placeholder="僅內部可見..." />
               </div>
            </div>
         </div>
