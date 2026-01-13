@@ -18,6 +18,7 @@ import { Plus, Loader2, MessageCircle, ExternalLink } from 'lucide-react';
 // --- 常數設定 ---
 const MY_LIFF_ID = "2008826901-DGGr1P8u";
 const LINE_OA_URL = "https://lin.ee/GRgdkQe";
+const STORAGE_KEY = 'zewu_marketing_source';
 declare const liff: any;
 
 // --- 輔助組件：Zewu Logo ---
@@ -31,7 +32,11 @@ const ZewuIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 // --- 子組件：LIFF 落地頁 (JoinView) ---
-const JoinView: React.FC = () => {
+interface JoinViewProps {
+  source: string;
+}
+
+const JoinView: React.FC<JoinViewProps> = ({ source }) => {
   const [status, setStatus] = useState('正在初始化...');
   const [error, setError] = useState<string | null>(null);
   const [showManualBtn, setShowManualBtn] = useState(false);
@@ -39,12 +44,6 @@ const JoinView: React.FC = () => {
   useEffect(() => {
     const initLiff = async () => {
       try {
-        const url = window.location.href;
-        const params = new URLSearchParams(window.location.search);
-        // 如果 search 沒抓到（可能是 hash router），改從 href 抓
-        const source = params.get('src') || params.get('source') || 
-                      (url.includes('src=') ? url.split('src=')[1].split('&')[0] : 'direct');
-
         setStatus('正在連接 LINE...');
         await liff.init({ liffId: MY_LIFF_ID });
 
@@ -63,17 +62,19 @@ const JoinView: React.FC = () => {
           userId: profile.userId,
           displayName: profile.displayName,
           lineUserId: profile.displayName,
-          source: decodeURIComponent(source),
+          source: source || 'direct',
           pictureUrl: profile.pictureUrl || '',
-          platform: 'ZEWU_VITE_CORE',
+          platform: 'ZEWU_CORE_V2',
           createdAt: serverTimestamp(),
           lastSeen: Date.now()
         }, { merge: true });
 
+        // 重要：在跳轉前清除 Storage，避免管理員下次訪問首頁被誤認
+        sessionStorage.removeItem(STORAGE_KEY);
+
         setStatus('即將進入官方帳號...');
         window.location.replace(LINE_OA_URL);
         
-        // 保險機制：如果三秒後還沒跳轉成功
         setTimeout(() => setShowManualBtn(true), 3000);
 
       } catch (err: any) {
@@ -84,7 +85,7 @@ const JoinView: React.FC = () => {
     };
 
     initLiff();
-  }, []);
+  }, [source]);
 
   return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-white p-10 text-center font-sans fixed inset-0 z-[9999]">
@@ -106,7 +107,10 @@ const JoinView: React.FC = () => {
         </div>
         {showManualBtn && (
           <button 
-            onClick={() => window.location.href = LINE_OA_URL}
+            onClick={() => {
+              sessionStorage.removeItem(STORAGE_KEY);
+              window.location.href = LINE_OA_URL;
+            }}
             className="w-full mt-8 bg-[#06C755] text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
           >
             <MessageCircle className="w-5 h-5 fill-current" />
@@ -121,25 +125,47 @@ const JoinView: React.FC = () => {
 
 // --- 主組件 (App) ---
 const App: React.FC = () => {
-  // 1. 同步攔截 (Synchronous Hijacking)
-  // 使用惰性初始化，在組件掛載前立即判斷模式
-  const [isLiffMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const url = window.location.href;
-      // 只要網址包含 src=, source= 或路徑含有 join 則視為 LIFF 模式
-      return url.includes('src=') || url.includes('source=') || url.includes('/join');
+  // 1. 同步攔截與持久化偵測
+  const [marketingSource] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    
+    const url = window.location.href;
+    const params = new URLSearchParams(window.location.search);
+    
+    // 優先權 1: 網址參數 (src= 或 source=)
+    let src = params.get('src') || params.get('source');
+    
+    // 容錯: 如果 URLSearchParams 失敗，使用正則表達式從 href 抓取
+    if (!src && url.includes('src=')) {
+      const match = url.match(/[?&]src=([^&]+)/);
+      if (match) src = decodeURIComponent(match[1]);
     }
-    return false;
+
+    // 如果網址有來源，立即存入 sessionStorage 並回傳
+    if (src) {
+      sessionStorage.setItem(STORAGE_KEY, src);
+      return src;
+    }
+
+    // 優先權 2: 檢查 sessionStorage (應對 OAuth 跳轉後的狀態)
+    const storedSrc = sessionStorage.getItem(STORAGE_KEY);
+    if (storedSrc) return storedSrc;
+
+    // 優先權 3: 路徑判斷
+    if (window.location.pathname.includes('/join')) return 'direct_join';
+
+    return null;
   });
 
-  // 2. LIFF 模式早期回傳 (Early Return)
-  // 這能防止後台組件、Firebase 監聽器被初始化
+  // 判定是否為 LIFF 模式
+  const isLiffMode = !!marketingSource;
+
+  // 早期回傳：防止後台程式碼載入
   if (isLiffMode) {
-    return <JoinView />;
+    return <JoinView source={marketingSource!} />;
   }
 
-  // --- 以下為後台管理系統邏輯 (只有管理員會看到) ---
-
+  // --- 後台管理邏輯 ---
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('zewu_user');
     return saved ? JSON.parse(saved) : null;
@@ -154,7 +180,6 @@ const App: React.FC = () => {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
-  // 資料監聽
   useEffect(() => {
     const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ ...doc.data() as User, id: doc.id })));
@@ -178,7 +203,6 @@ const App: React.FC = () => {
 
   const employeeNames = useMemo(() => users.map(u => u.name), [users]);
 
-  // 管理後台渲染邏輯
   if (isLoading) return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4 font-sans text-center">
       <div className="w-12 h-12 relative">
