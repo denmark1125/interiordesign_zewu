@@ -26,8 +26,7 @@ export const customersCollection = collection(db, "customers");
 export const reservationsCollection = collection(db, "reservations");
 export const lineMetricsCollection = collection(db, "line_metrics");
 export const systemLogsCollection = collection(db, "system_logs");
-export const webhookLogsCollection = collection(db, "webhook_logs");
-export const liffVisitsCollection = collection(db, "liff_visits"); // 新增
+export const webhookLogsCollection = collection(db, "webhook_logs"); // 新增
 
 // 通用圖片上傳函式
 export const uploadImage = async (file: File, pathPrefix: string = 'project-covers'): Promise<string> => {

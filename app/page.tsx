@@ -1,20 +1,22 @@
 
+'use client';
+
 import React, { useState, useMemo, useEffect } from 'react';
-import Layout from './components/Layout';
-import ProjectDashboard from './components/SiteDashboard';
-import ProjectDetail from './components/SiteDetail';
-import LoginScreen from './components/LoginScreen';
-import NewProjectModal from './components/NewProjectModal';
-import TeamManagement from './components/TeamManagement';
-import AnalyticsDashboard from './components/AnalyticsDashboard';
-import SystemChangelog from './components/SystemChangelog';
-import MarketingDashboard from './components/MarketingDashboard';
-import CRMManager from './components/CRMManager';
-import { DesignProject, User, LineMetric } from './types';
-import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy } from './services/firebase';
+import Layout from '../components/Layout';
+import ProjectDashboard from '../components/SiteDashboard';
+import ProjectDetail from '../components/SiteDetail';
+import LoginScreen from '../components/LoginScreen';
+import NewProjectModal from '../components/NewProjectModal';
+import TeamManagement from '../components/TeamManagement';
+import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import SystemChangelog from '../components/SystemChangelog';
+import MarketingDashboard from '../components/MarketingDashboard';
+import CRMManager from '../components/CRMManager';
+import { DesignProject, User, LineMetric } from '../types';
+import { db, usersCollection, projectsCollection, lineMetricsCollection, onSnapshot, setDoc, doc, deleteDoc, query, orderBy } from '../services/firebase';
 import { Plus, Loader2 } from 'lucide-react';
 
-const App: React.FC = () => {
+export default function AdminPage() {
   // 後台專屬狀態
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -22,15 +24,15 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<DesignProject[]>([]);
   const [lineMetrics, setLineMetrics] = useState<LineMetric[]>([]);
 
-  // 導航狀態
+  // 導航與視圖
   const [view, setView] = useState<'dashboard' | 'projects' | 'detail' | 'team' | 'analytics' | 'changelog' | 'marketing' | 'crm'>('dashboard');
   const [selectedProject, setSelectedProject] = useState<DesignProject | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
-  // 監聽核心數據 (僅在 App 模式啟動)
+  // 數據監聽
   useEffect(() => {
-    // 1. 監聽員工清單與登入統計
+    // 1. 監聽員工清單
     const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ ...doc.data() as User, id: doc.id })));
     });
@@ -41,7 +43,7 @@ const App: React.FC = () => {
       setIsLoading(false);
     });
 
-    // 3. 監聽行銷指標
+    // 3. 監聽行銷數據
     const unsubscribeMetrics = onSnapshot(query(lineMetricsCollection, orderBy("date", "asc")), (snapshot) => {
       setLineMetrics(snapshot.docs.map(doc => doc.data() as LineMetric));
     });
@@ -55,15 +57,15 @@ const App: React.FC = () => {
 
   const employeeNames = useMemo(() => users.map(u => u.name), [users]);
 
-  // 後台專屬 Loading 畫面
+  // 管理後台 Loading
   if (isLoading) return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
       <Loader2 className="w-10 h-10 text-slate-800 animate-spin" />
-      <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase">正在同步後台系統數據...</p>
+      <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase">後台資料同步中...</p>
     </div>
   );
   
-  // 登入狀態攔截
+  // 登入攔截
   if (!currentUser) return <LoginScreen onLogin={(user) => setCurrentUser(user)} users={users} />;
 
   return (
@@ -118,6 +120,4 @@ const App: React.FC = () => {
       {showNewProjectModal && <NewProjectModal initialData={conversionData} currentUser={currentUser} onClose={() => { setShowNewProjectModal(false); setConversionData(null); }} onSubmit={(p) => { setDoc(doc(db, "projects", p.id), p); setShowNewProjectModal(false); setConversionData(null); }} employeeNames={employeeNames} />}
     </Layout>
   );
-};
-
-export default App;
+}

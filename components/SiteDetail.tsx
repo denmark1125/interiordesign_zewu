@@ -9,13 +9,13 @@ import { db, updateDoc, doc } from '../services/firebase';
 interface ProjectDetailProps {
   project: DesignProject;
   currentUser: User;
-  onBack: void;
+  onBack: () => void;
   onUpdateProject: (updatedProject: DesignProject) => void;
   onDeleteProject: (projectId: string) => void;
   employeeNames: string[];
 }
 
-const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onBack, onUpdateProject, employeeNames }) => {
+const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onBack, onUpdateProject, onDeleteProject, employeeNames }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'schedule' | 'ai'>('details');
   const [formData, setFormData] = useState<DesignProject>(project);
   const [progressCategory, setProgressCategory] = useState<string>(CONSTRUCTION_PHASES[0]);
@@ -32,7 +32,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
 
   const detailRef = useRef<HTMLDivElement>(null);
 
-  // Fix: Added sortedHistory memo to resolve the reference error in the template
+  // 排序日誌動態
   const sortedHistory = useMemo(() => {
     return [...(formData.history || [])].sort((a, b) => b.timestamp - a.timestamp);
   }, [formData.history]);
@@ -51,7 +51,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
       const updatedData = { ...formData, lastUpdatedTimestamp: Date.now() };
       await updateDoc(doc(db, "projects", formData.id), updatedData);
       onUpdateProject(updatedData);
-      alert('✅ 所有變更已同步');
+      alert('✅ 所有變更已同步至雲端');
     } catch (e) {
       alert('❌ 儲存失敗');
     } finally {
@@ -76,7 +76,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
   };
 
   const handleDeleteScheduleItem = (index: number) => {
-    if (!window.confirm("⚠️ 您確定要刪除此筆工程排程嗎？\n此動作將從進度表與行事曆中移除，且無法復原。")) return;
+    if (!window.confirm("⚠️ 您確定要刪除此筆工程排程嗎？\n此動作將從進度表與行事曆中移除。")) return;
     const updatedSchedule = [...(formData.schedule || [])];
     updatedSchedule.splice(index, 1);
     setFormData(prev => ({ ...prev, schedule: updatedSchedule }));
@@ -120,9 +120,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     
     const days = [];
-    // 填充空白
     for (let i = 0; i < firstDay; i++) days.push(null);
-    // 填充日期
     for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
     
     return days;
@@ -147,6 +145,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
            <ArrowLeft className="w-4 h-4" /> 返回列表
          </button>
          <div className="flex gap-2">
+            <button onClick={() => { if(confirm('確定刪除此案場？')) onDeleteProject(project.id); }} className="px-4 py-2 text-red-500 font-bold text-xs hover:bg-red-50 rounded-lg transition-colors">
+              刪除案場
+            </button>
             <button onClick={handleSaveAll} disabled={isSaving} className="px-5 py-2 bg-slate-800 text-white rounded-lg flex items-center gap-2 font-black text-xs hover:bg-slate-700 transition-all shadow-md active:scale-95">
                {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 儲存變更
             </button>
@@ -161,7 +162,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
            <h1 className="text-xl font-black mb-1 tracking-tight">{formData.projectName}</h1>
            <div className="flex items-center gap-3 text-[11px] font-bold opacity-90">
              <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {formData.address || '未填寫案址'}</span>
-             <span className="bg-white/20 px-2 py-0.5 rounded uppercase">{formData.currentStage}</span>
+             <span className="bg-white/20 px-2 py-0.5 rounded uppercase tracking-widest">{formData.currentStage}</span>
            </div>
         </div>
       </div>
@@ -210,6 +211,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                       </div>
                     </div>
                   ))}
+                  {sortedHistory.length === 0 && (
+                    <div className="py-10 text-center text-slate-300 font-black italic text-sm">尚無動態紀錄</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -217,7 +221,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
 
           {activeTab === 'schedule' && (
             <div className="space-y-6 animate-fade-in">
-              {/* 1. 工程進度行事曆 */}
+              {/* 工程進度行事曆 */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm">
@@ -250,7 +254,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                 </div>
               </div>
 
-              {/* 2. 新增排程表單 */}
+              {/* 新增排程表單 */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
                 <h3 className="font-black text-slate-800 mb-4 text-sm flex items-center gap-2"><Plus className="w-4 h-4 text-slate-300" /> 新增階段規劃</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -276,7 +280,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                 </div>
               </div>
 
-              {/* 3. 排程清單表 */}
+              {/* 排程清單表 */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50/50 text-[9px] text-slate-400 font-black uppercase tracking-widest">
@@ -317,8 +321,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-12 text-center">
                <Bot className="w-10 h-10 text-slate-200 mx-auto mb-4" />
                <h3 className="font-black text-slate-800 mb-1 text-base">AI 專案診斷</h3>
-               <p className="text-[11px] text-slate-400 mb-6 font-bold max-w-xs mx-auto">正在分析該案場的施工頻率與日誌內容...</p>
-               <button className="bg-slate-800 text-white px-8 py-3 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all"><Sparkles className="w-4 h-4 mr-2"/> 啟動智能分析</button>
+               <p className="text-[11px] text-slate-400 mb-6 font-bold max-w-xs mx-auto">正在分析該案場的施工頻率與日誌內容，為您提供專業建議...</p>
+               <button className="bg-slate-800 text-white px-8 py-3 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all flex items-center gap-2 mx-auto">
+                 <Sparkles className="w-4 h-4"/> 啟動智能分析
+               </button>
             </div>
           )}
         </div>
@@ -333,7 +339,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
                  </div>
                  <div>
                     <h4 className="font-black text-slate-800 text-sm">{formData.assignedEmployee}</h4>
-                    <p className="text-[9px] text-slate-300 font-black uppercase">Project Lead</p>
+                    <p className="text-[9px] text-slate-300 font-black uppercase tracking-tighter">Project Lead</p>
                  </div>
               </div>
               <select className={inputClass} value={formData.assignedEmployee} onChange={e => handleInputChange('assignedEmployee', e.target.value)}>
@@ -344,18 +350,18 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, currentUser, onB
            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-5">
               <h3 className="font-black text-slate-400 mb-2 text-[9px] uppercase tracking-widest border-b border-slate-50 pb-3">專案設定</h3>
               <div>
-                 <label className="text-[9px] font-black text-slate-400 uppercase mb-1.5 block tracking-widest">當前進度</label>
+                 <label className="text-[9px] font-black text-slate-400 uppercase mb-1.5 block tracking-widest">當前階段</label>
                  <select className={inputClass} value={formData.currentStage} onChange={e => handleInputChange('currentStage', e.target.value)}>
                     {Object.values(ProjectStage).map(stage => <option key={stage} value={stage}>{stage}</option>)}
                  </select>
               </div>
               <div>
-                 <label className="text-[9px] font-black text-slate-400 uppercase mb-1.5 block tracking-widest">業主備註</label>
-                 <textarea rows={3} value={formData.clientRequests} onChange={e => handleInputChange('clientRequests', e.target.value)} className={inputClass} placeholder="..." />
+                 <label className="text-[9px] font-black text-slate-400 uppercase mb-1.5 block tracking-widest">業主特殊需求</label>
+                 <textarea rows={3} value={formData.clientRequests} onChange={e => handleInputChange('clientRequests', e.target.value)} className={inputClass} placeholder="紀錄客戶交待事項..." />
               </div>
               <div>
-                 <label className="text-[9px] font-black text-slate-400 uppercase mb-1.5 block tracking-widest">內部備註</label>
-                 <textarea rows={2} value={formData.internalNotes} onChange={e => handleInputChange('internalNotes', e.target.value)} className={inputClass} placeholder="..." />
+                 <label className="text-[9px] font-black text-slate-400 uppercase mb-1.5 block tracking-widest">內部工務備註</label>
+                 <textarea rows={2} value={formData.internalNotes} onChange={e => handleInputChange('internalNotes', e.target.value)} className={inputClass} placeholder="公司內部查看..." />
               </div>
            </div>
         </div>

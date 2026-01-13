@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { SystemLog, User } from '../types';
-import { Shield, Zap, Plus, X, Clock, Trash2, Send, CheckCircle2, Loader2, Activity } from 'lucide-react';
+import { Shield, Zap, Plus, X, Clock, Trash2, Send, CheckCircle2, Loader2, Activity, UserCheck } from 'lucide-react';
 import { db, systemLogsCollection, onSnapshot, query, orderBy, setDoc, doc, deleteDoc } from '../services/firebase';
 
 const FINAL_WEBHOOK_URL = "https://hook.us2.make.com/qrp5dyybwi922p68c1rrfpr6ud8yuv9r"; 
@@ -16,13 +16,14 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   
-  // 數據排序：依最後登入時間排序 (最新在前)
+  // 成員活動排序 (依最後登入時間排序)
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
   }, [users]);
 
+  // 診斷工具狀態
   const [testUserId, setTestUserId] = useState('U743710776b66e57973f757271874312a');
-  const [testClientName, setTestClientName] = useState('工程測試人員');
+  const [testClientName, setTestClientName] = useState('核心連線測試');
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   
   const [version, setVersion] = useState('');
@@ -43,7 +44,7 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
       UserId: testUserId,
       clientName: testClientName,
       appointmentTime: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      serviceName: '核心診斷測試'
+      serviceName: '連線診斷作業'
     });
     try {
       await fetch(`${FINAL_WEBHOOK_URL}?${params.toString()}`, { method: 'POST', mode: 'no-cors' });
@@ -70,6 +71,15 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
     setVersion(''); setTitle(''); setContent('');
   };
 
+  const translateRole = (role: string) => {
+    switch(role) {
+      case 'manager': return '管理員';
+      case 'engineer': return '系統工程師';
+      case 'employee': return '一般成員';
+      default: return role;
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in pb-20 max-w-5xl mx-auto font-sans">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-slate-200">
@@ -77,10 +87,10 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
           <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
             <Shield className="w-8 h-8 text-slate-800" /> 工程師控制台
           </h2>
-          <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-[0.2em]">系統維運與成員監控</p>
+          <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-[0.2em]">系統維護與成員監控</p>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-sm">
-            <button onClick={() => setActiveTab('logs')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'logs' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>更新日誌</button>
+            <button onClick={() => setActiveTab('logs')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'logs' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>系統日誌</button>
             <button onClick={() => setActiveTab('access')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'access' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>成員監測</button>
             <button onClick={() => setActiveTab('debug')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'debug' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>連線診斷</button>
         </div>
@@ -90,10 +100,10 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
            <div className="p-8 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
               <h3 className="font-black text-slate-800 text-sm flex items-center gap-3 uppercase tracking-widest">
-                <Activity className="w-5 h-5 text-emerald-500" /> 成員登入即時狀態
+                <Activity className="w-5 h-5 text-emerald-500" /> 成員即時登入狀態
               </h3>
               <span className="text-[10px] font-black text-slate-400 bg-white px-3 py-1 rounded-full shadow-sm border border-slate-100">
-                ACTIVE MEMBERS: {users.length}
+                目前活動成員：{users.length} 位
               </span>
            </div>
            <div className="overflow-x-auto">
@@ -101,9 +111,9 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
                  <thead>
                     <tr className="text-[10px] text-slate-400 font-black uppercase tracking-widest bg-white">
                        <th className="px-8 py-5">成員名稱</th>
-                       <th className="px-8 py-5">角色</th>
-                       <th className="px-8 py-5">最後在線</th>
-                       <th className="px-8 py-5 text-right">累計次數</th>
+                       <th className="px-8 py-5">角色權限</th>
+                       <th className="px-8 py-5">最後上線時間</th>
+                       <th className="px-8 py-5 text-right">累計登入</th>
                     </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-50 font-sans">
@@ -122,21 +132,23 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
                           </td>
                           <td className="px-8 py-5">
                              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${user.role === 'manager' ? 'bg-slate-800 text-white' : user.role === 'engineer' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                {user.role}
+                                {translateRole(user.role)}
                              </span>
                           </td>
                           <td className="px-8 py-5">
                              {user.lastLoginAt ? (
                                 <div className="flex flex-col">
                                    <span className="text-xs font-bold text-slate-600">{new Date(user.lastLoginAt).toLocaleString('zh-TW')}</span>
-                                   <span className="text-[9px] text-emerald-400 font-black uppercase mt-0.5 tracking-tighter">Verified Session</span>
+                                   <span className="text-[9px] text-emerald-400 font-black uppercase mt-0.5 tracking-tighter flex items-center gap-1">
+                                      <UserCheck className="w-2.5 h-2.5"/> 上線紀錄正常
+                                   </span>
                                 </div>
                              ) : (
-                                <span className="text-xs text-slate-300 italic font-bold">尚未登入紀錄</span>
+                                <span className="text-xs text-slate-300 italic font-bold">尚未有登入紀錄</span>
                              )}
                           </td>
                           <td className="px-8 py-5 text-right font-black text-lg tabular-nums text-slate-700">
-                             {user.loginCount || 0}
+                             {user.loginCount || 0} <span className="text-[10px] text-slate-300 ml-1">次</span>
                           </td>
                        </tr>
                     )) : (
@@ -183,7 +195,7 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
                             </div>
                             <div className="text-slate-500 text-sm leading-relaxed whitespace-pre-wrap font-bold">{log.content}</div>
                             <div className="mt-6 pt-6 border-t border-slate-50 text-[10px] text-slate-300 font-black flex items-center gap-2 uppercase tracking-widest">
-                               <Clock className="w-3.5 h-3.5" /> {new Date(log.timestamp).toLocaleString()} • {log.author}
+                               <Clock className="w-3.5 h-3.5" /> {new Date(log.timestamp).toLocaleString()} • 錄入人員：{log.author}
                             </div>
                         </div>
                     </div>
@@ -197,8 +209,8 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
            <div className="flex items-center gap-4">
               <div className="p-4 bg-amber-50 rounded-2xl"><Zap className="w-8 h-8 text-amber-500" /></div>
               <div>
-                <h3 className="text-xl font-black text-slate-800">Webhook 連線診斷器</h3>
-                <p className="text-sm text-slate-400 font-bold">驗證 Make.com 自動化接收端狀態。</p>
+                <h3 className="text-xl font-black text-slate-800">自動化連線診斷器</h3>
+                <p className="text-sm text-slate-400 font-bold">驗證後台與 Make.com 伺服器的通訊狀態。</p>
               </div>
            </div>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8 bg-slate-50 rounded-[32px] border border-slate-100">
@@ -206,7 +218,7 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
               <input type="text" value={testClientName} onChange={e => setTestClientName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-3.5 font-bold text-sm outline-none" />
               <button onClick={handleTestWebhook} disabled={testStatus === 'loading'} className={`md:col-span-2 w-full py-5 rounded-[24px] font-black transition-all flex items-center justify-center gap-3 shadow-md active:scale-95 ${testStatus === 'success' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white'}`}>
                 {testStatus === 'loading' ? <Loader2 className="w-6 h-6 animate-spin"/> : testStatus === 'success' ? <CheckCircle2 className="w-6 h-6"/> : <Send className="w-5 h-5" />}
-                {testStatus === 'loading' ? '正在發送封包...' : testStatus === 'success' ? '診斷完畢：連線正常' : '執行連線診斷'}
+                {testStatus === 'loading' ? '正在發送測試封包...' : testStatus === 'success' ? '診斷結果：連線正常' : '執行連線診斷'}
               </button>
            </div>
         </div>
