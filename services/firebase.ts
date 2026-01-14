@@ -1,6 +1,7 @@
-
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc, addDoc, limit, where } from "firebase/firestore";
+// Fixed: Using namespace import and destructuring with any cast to bypass type errors for missing members in firebase/app
+import * as firebaseApp from "firebase/app";
+const { initializeApp, getApps, getApp } = firebaseApp as any;
+import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, updateDoc, addDoc, limit, where, serverTimestamp } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const firebaseConfig = {
@@ -26,7 +27,8 @@ export const customersCollection = collection(db, "customers");
 export const reservationsCollection = collection(db, "reservations");
 export const lineMetricsCollection = collection(db, "line_metrics");
 export const systemLogsCollection = collection(db, "system_logs");
-export const webhookLogsCollection = collection(db, "webhook_logs"); // 新增
+export const webhookLogsCollection = collection(db, "webhook_logs");
+export const marketingLinksCollection = collection(db, "marketing_links");
 
 // 通用圖片上傳函式
 export const uploadImage = async (file: File, pathPrefix: string = 'project-covers'): Promise<string> => {
@@ -43,4 +45,4 @@ export const uploadImage = async (file: File, pathPrefix: string = 'project-cove
 };
 
 // 重新導出常用的 Firestore 函式
-export { setDoc, doc, deleteDoc, onSnapshot, query, orderBy, collection, updateDoc, addDoc, limit, getDocs, where };
+export { setDoc, doc, deleteDoc, onSnapshot, query, orderBy, collection, updateDoc, addDoc, limit, getDocs, where, serverTimestamp };

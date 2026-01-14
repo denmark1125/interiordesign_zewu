@@ -27,6 +27,13 @@ export interface Customer {
   createdAt: number;
 }
 
+export interface MarketingLink {
+  id: string;
+  tag: string;
+  fullUrl: string;
+  createdAt: any; // Firebase serverTimestamp
+}
+
 export interface LineConnection {
   id: string;
   UserId: string; // LINE 原始回傳的 U-ID
