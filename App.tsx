@@ -32,20 +32,48 @@ const App: React.FC = () => {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [conversionData, setConversionData] = useState<Partial<DesignProject> | null>(null);
 
-  // --- 實時數據監聽 (僅限後台管理資料) ---
+  // --- 自動登出功能 (5分鐘無操作) ---
   useEffect(() => {
-    // 1. 監聽員工/使用者清單
+    if (!currentUser) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleLogout();
+        alert('由於您已超過 5 分鐘未操作，系統已自動登出以保護資料安全。');
+      }, 5 * 60 * 1000); // 5 分鐘
+    };
+
+    // 監聽活動事件
+    const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'];
+    events.forEach(event => window.addEventListener(event, resetTimer));
+
+    resetTimer(); // 初始化
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach(event => window.removeEventListener(event, resetTimer));
+    };
+  }, [currentUser]);
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('zewu_user');
+  };
+
+  // --- 實時數據監聽 ---
+  useEffect(() => {
     const unsubscribeUsers = onSnapshot(query(usersCollection, orderBy("name")), (snapshot) => {
       setUsers(snapshot.docs.map(doc => ({ ...doc.data() as User, id: doc.id })));
     });
 
-    // 2. 監聽專案案場
     const unsubscribeProjects = onSnapshot(query(projectsCollection, orderBy("lastUpdatedTimestamp", "desc")), (snapshot) => {
       setProjects(snapshot.docs.map(doc => doc.data() as DesignProject));
       setIsLoading(false);
     });
 
-    // 3. 監聽 LINE 基礎指標 (好友數等)
     const unsubscribeMetrics = onSnapshot(query(lineMetricsCollection, orderBy("date", "asc")), (snapshot) => {
       setLineMetrics(snapshot.docs.map(doc => doc.data() as LineMetric));
     });
@@ -59,20 +87,15 @@ const App: React.FC = () => {
 
   const employeeNames = useMemo(() => users.map(u => u.name), [users]);
 
-  // --- 全域 Loading 狀態 ---
   if (isLoading) return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
       <div className="relative">
         <Loader2 className="w-12 h-12 text-slate-800 animate-spin" />
-        <div className="absolute inset-0 flex items-center justify-center">
-           <div className="w-1.5 h-1.5 bg-slate-800 rounded-full"></div>
-        </div>
       </div>
       <p className="text-slate-400 font-black tracking-[0.2em] text-[10px] uppercase">後台系統數據同步中</p>
     </div>
   );
   
-  // --- 登入攔截 ---
   if (!currentUser) return (
     <LoginScreen 
       onLogin={(user) => {
@@ -88,10 +111,9 @@ const App: React.FC = () => {
       activeTab={view === 'detail' ? 'projects' : view as any} 
       onTabChange={(v) => { setSelectedProject(null); setView(v); }}
       currentUser={currentUser}
-      onLogout={() => { setCurrentUser(null); localStorage.removeItem('zewu_user'); }}
+      onLogout={handleLogout}
       onExportData={() => {}}
     >
-      {/* 儀表板區域 */}
       {view === 'dashboard' && (
         <ProjectDashboard 
           projects={projects} 
@@ -101,7 +123,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* CRM 客戶與預約管理 */}
       {view === 'crm' && (
         <CRMManager 
           currentUser={currentUser} 
@@ -112,7 +133,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* LINE 行銷追蹤與數據分析 */}
       {view === 'marketing' && (
         <MarketingDashboard 
           metrics={lineMetrics} 
@@ -120,7 +140,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* 系統維護日誌 */}
       {view === 'changelog' && (
         <SystemChangelog 
           currentUser={currentUser} 
@@ -128,7 +147,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* 團隊成員權限管理 */}
       {view === 'team' && (
         <TeamManagement 
           users={users} 
@@ -139,10 +157,8 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* 營運大數據分析 */}
       {view === 'analytics' && <AnalyticsDashboard projects={projects} />}
       
-      {/* 案場清單檢視 */}
       {view === 'projects' && !selectedProject && (
         <div className="space-y-6 animate-fade-in font-sans">
           <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
@@ -175,7 +191,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* 案場詳細編輯與 AI 診斷 */}
       {view === 'detail' && selectedProject && (
         <ProjectDetail 
           project={selectedProject} 
@@ -187,7 +202,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* 新增案場彈窗 */}
       {showNewProjectModal && (
         <NewProjectModal 
           initialData={conversionData} 

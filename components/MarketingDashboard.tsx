@@ -13,7 +13,8 @@ interface MarketingDashboardProps {
 type TimeRange = 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'CUSTOM' | 'ALL';
 
 const LIFF_BASE_URL = "https://liff.line.me/2008826901-DGGr1P8u";
-const BASELINE_FRIENDS = 867;
+// 好友基準點校正：867 (2025/01/14)
+const BASELINE_FRIENDS = 858;
 const BASELINE_DATE_MS = new Date('2025-01-14T00:00:00').getTime();
 
 const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, metrics }) => {
@@ -82,7 +83,7 @@ const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, me
     let end = new Date();
 
     if (timeRange === 'THIS_WEEK') {
-      const day = now.getDay() || 7; // 周日為7
+      const day = now.getDay() || 7;
       start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1);
     } else if (timeRange === 'LAST_WEEK') {
       const day = now.getDay() || 7;
