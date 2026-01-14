@@ -42,6 +42,8 @@ export interface LineConnection {
   lastMessage?: string;
   timestamp: number;
   isBound: boolean;
+  isBlocked?: boolean; // 新增：是否封鎖
+  source?: string;    // 新增：來源標籤
 }
 
 export interface Reservation {
