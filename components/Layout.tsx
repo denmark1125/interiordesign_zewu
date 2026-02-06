@@ -59,9 +59,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, curre
           <button onClick={() => { onTabChange('crm'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'crm' ? 'bg-[#54534d] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
             <UserCircle className="w-5 h-5 mr-3" /> 預約與 CRM
           </button>
-          <button onClick={() => { onTabChange('marketing'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'marketing' ? 'bg-[#54534d] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-            <MessageCircle className="w-5 h-5 mr-3" /> LINE 數據分析
-          </button>
+
+          {/* 限定工程師權限查看 LINE 數據分析 */}
+          {isEngineer && (
+            <button onClick={() => { onTabChange('marketing'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'marketing' ? 'bg-[#54534d] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <MessageCircle className="w-5 h-5 mr-3" /> LINE 數據分析
+            </button>
+          )}
 
           {canManageTeam && (
             <>

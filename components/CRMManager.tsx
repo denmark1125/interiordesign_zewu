@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Customer, Reservation, User, LineConnection } from '../types';
 import { Search, Clock, X, Loader2, Plus, ChevronRight, Bot, ChevronLeft, Trash2, Zap, User as UserIcon, CheckCircle2, Calendar as CalendarIcon, Link2Off, Edit3, UserPlus, Send, Activity, Info, Tag } from 'lucide-react';
-import { db, lineConnectionsCollection, customersCollection, reservationsCollection, webhookLogsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc, limit, collection } from '../services/firebase';
+import { db, lineConnectionsCollection, customersCollection, reservationsCollection, webhookLogsCollection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, deleteDoc, limit } from '../services/firebase';
 
 const MAKE_IMMEDIATE_WEBHOOK_URL = "https://hook.us2.make.com/qrp5dyybwi922p68c1rrfpr6ud8yuv9r"; 
 
@@ -29,7 +29,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const [rawLineInbox, setRawLineInbox] = useState<LineConnection[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
-  const [userSources, setUserSources] = useState<Record<string, string>>({}); // 追蹤來源映射表
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
@@ -47,34 +46,29 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       setCustomers(snap.docs.map(d => ({ ...d.data(), id: d.id }) as Customer));
     });
     
-    // 監聽流量池 (LINE 好友)
+    // 監聽流量池 (LINE 好友) - 唯一數據源 line_connections
     const unsubInbox = onSnapshot(query(lineConnectionsCollection, orderBy("timestamp", "desc")), (snap) => {
       const connections = snap.docs.map(d => {
         const data = d.data();
-        const uid = (data.UserId || data.lineUserId || data.userId || "").toString().trim();
+        
+        // 對齊 line_connections 欄位 (userId, displayName, pictureUrl, source)
+        const uid = (data.userId || data.UserId || "").toString().trim();
+        const name = data.displayName || data.lineUserId || "未知用戶";
+        const pic = data.pictureUrl || data.linePictureUrl || '';
+        const srcTag = data.source || data.src || '直接搜尋';
+
         return {
           id: d.id,
           UserId: uid,
-          lineUserId: data.lineUserId || data.displayName || "未知用戶",
-          linePictureUrl: data.linePictureUrl || '',
+          lineUserId: name,
+          linePictureUrl: pic,
+          source: srcTag,
           isBound: data.isBound === true 
         } as LineConnection;
-      }).filter(i => i.UserId.startsWith('U')); 
+      }).filter(i => i.UserId && i.UserId.startsWith('U')); 
       setRawLineInbox(connections);
     });
 
-    // 關鍵整合：監聽廣告管道來源數據
-    const unsubSources = onSnapshot(collection(db, "user_sources"), (snap) => {
-      const sourceMap: Record<string, string> = {};
-      snap.docs.forEach(d => {
-        const data = d.data();
-        if (data.userId && data.source) {
-          sourceMap[data.userId] = data.source;
-        }
-      });
-      setUserSources(sourceMap);
-    });
-    
     const unsubRes = onSnapshot(query(reservationsCollection, orderBy("dateTime", "asc")), (snap) => {
       setReservations(snap.docs.map(d => ({ ...d.data(), id: d.id }) as Reservation));
     });
@@ -83,7 +77,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       setWebhookLogs(snap.docs.map(d => ({ ...d.data(), id: d.id }) as WebhookLog));
     });
     
-    return () => { unsubCustomers(); unsubInbox(); unsubRes(); unsubLogs(); unsubSources(); };
+    return () => { unsubCustomers(); unsubInbox(); unsubRes(); unsubLogs(); };
   }, []);
 
   const lineInbox = useMemo(() => rawLineInbox.filter(item => !item.isBound), [rawLineInbox]);
@@ -105,7 +99,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         UserId: item.UserId,
         lineUserId: item.lineUserId,
         linePictureUrl: item.linePictureUrl,
-        tags: [userSources[item.UserId] || '未知來源'],
+        // 直接從 line_connections 的 item 中帶入來源標籤
+        tags: [item.source || '直接搜尋'],
         createdAt: Date.now()
       };
       await setDoc(doc(db, "customers", newCustomer.id), newCustomer);
@@ -144,12 +139,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-sm text-slate-800 focus:border-slate-400 outline-none transition-all font-bold";
   
   return (
-    <div className="space-y-5 pb-20 max-w-7xl mx-auto animate-fade-in font-sans">
-      {/* 頁面標題與分頁 */}
+    <div className="space-y-5 pb-20 max-w-7xl mx-auto animate-fade-in font-sans text-left">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-200">
         <div>
           <h2 className="text-xl font-black text-slate-800 tracking-tight">案場客戶管理中心</h2>
-          <p className="text-xs text-slate-400 font-bold mt-0.5 uppercase tracking-wide">追蹤預約、管理名單與 LINE 連結狀態</p>
+          <p className="text-xs text-slate-400 font-bold mt-0.5 uppercase tracking-wide">Single Source Mode (line_connections)</p>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-sm">
           {[
@@ -170,7 +164,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       </div>
 
-      {/* 預約日曆視圖 */}
       {activeTab === 'reservations' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
@@ -234,11 +227,10 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 客戶列表視圖 */}
       {activeTab === 'customers' && (
         <div className="space-y-6 animate-fade-in">
           <div className="flex gap-3 items-center">
-            <div className="relative flex-1">
+            <div className="relative flex-1 text-left">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 w-4 h-4" />
               <input type="text" placeholder="搜尋客戶姓名..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-white border border-slate-100 rounded-xl pl-12 pr-6 py-3.5 text-sm shadow-sm outline-none focus:ring-2 focus:ring-slate-100 font-bold" />
             </div>
@@ -260,7 +252,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                         </div>
                       )}
                    </div>
-                   <div>
+                   <div className="text-left">
                       <h4 className="font-black text-slate-800 text-lg flex items-center gap-2">{customer.name} <Edit3 className="w-3.5 h-3.5 text-slate-200 cursor-pointer hover:text-slate-400" /></h4>
                       <p className="text-[11px] text-slate-400 font-bold mt-0.5">{customer.phone || '無電話紀錄'}</p>
                    </div>
@@ -273,7 +265,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                           <Tag className="w-2.5 h-2.5" /> {tag}
                         </span>
                       ))}
-                      {!customer.tags?.length && <span className="text-[9px] text-slate-300 italic font-bold">尚無來源標記</span>}
+                      {!customer.tags?.length && <span className="text-[9px] text-slate-300 italic font-bold">尚無標記</span>}
                    </div>
 
                    <button onClick={() => onConvertToProject?.(customer)} className="w-full bg-slate-50 text-slate-800 py-3.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 hover:bg-slate-100 transition-all border border-slate-100 active:scale-95">
@@ -281,7 +273,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                    </button>
                    <div className="pt-4 border-t border-slate-50 flex flex-col items-center">
                       <p className="text-[9px] text-slate-300 font-black uppercase tracking-widest mb-2">LINE: {customer.lineUserId || '未連動'}</p>
-                      <button className="text-[10px] font-black text-red-400 flex items-center gap-2 hover:underline"><Link2Off className="w-3.5 h-3.5" /> 解除連動</button>
                    </div>
                 </div>
               </div>
@@ -291,30 +282,22 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 流量池視圖 */}
       {activeTab === 'inbox' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
           {lineInbox.map(item => (
             <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-8 shadow-sm hover:shadow-lg transition-all flex flex-col text-center group relative overflow-hidden">
-              {/* 來源標記浮層 */}
-              {userSources[item.UserId] && (
-                <div className="absolute top-0 right-0 p-2">
-                   <span className="bg-[#06C755] text-white px-3 py-1 rounded-bl-xl text-[9px] font-black shadow-sm flex items-center gap-1.5">
-                     <Activity className="w-3 h-3" /> {userSources[item.UserId]}
-                   </span>
-                </div>
-              )}
+              {/* 來源標記浮層 (直接讀取 item.source) */}
+              <div className="absolute top-0 right-0 p-2">
+                 <span className="bg-[#06C755] text-white px-3 py-1 rounded-bl-xl text-[9px] font-black shadow-sm flex items-center gap-1.5">
+                   <Activity className="w-3 h-3" /> {item.source || '直接搜尋'}
+                 </span>
+              </div>
 
               <div className="flex justify-center mb-6">
                  <div className="relative">
                     <div className="w-20 h-20 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden shadow-inner">
                         {item.linePictureUrl ? <img src={item.linePictureUrl} className="w-full h-full object-cover" /> : <Bot className="w-full h-full p-5 text-slate-200" />}
                     </div>
-                    {userSources[item.UserId] && (
-                       <div className="absolute -bottom-2 -right-2 bg-white rounded-full p-1.5 border border-slate-100 shadow-md">
-                          <Zap className="w-4 h-4 text-emerald-500 fill-current" />
-                       </div>
-                    )}
                  </div>
               </div>
               <h4 className="font-black text-slate-800 text-xl mb-0.5">{item.lineUserId}</h4>
@@ -330,9 +313,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
               <div className="pt-6 border-t border-slate-50">
                  <div className="flex items-center justify-center gap-2 mb-2">
                     <Info className="w-3 h-3 text-slate-300" />
-                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">來源：{userSources[item.UserId] || '直接搜尋/名片'}</p>
+                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">管道：{item.source || '未識別'}</p>
                  </div>
-                 <p className="text-[11px] text-slate-200 italic font-bold">目前無待綁定客戶</p>
               </div>
             </div>
           ))}
@@ -340,10 +322,9 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 通知紀錄視圖 */}
       {activeTab === 'automation' && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 space-y-3 animate-fade-in">
-           <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-6">LINE 自動發送日誌 (近 50 筆)</p>
+           <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-6 text-left">通知紀錄 (基於連線觸發)</p>
            <div className="space-y-4">
               {webhookLogs.map(log => (
                 <div key={log.id} className="flex items-center justify-between p-6 bg-white border border-slate-50 rounded-2xl hover:bg-slate-50 transition-all group">
@@ -351,16 +332,16 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                       <div className="p-3 bg-emerald-50 rounded-xl text-emerald-500">
                          <Send className="w-5 h-5" />
                       </div>
-                      <div>
+                      <div className="text-left">
                          <div className="flex items-center gap-3 mb-0.5">
                             <h4 className="text-base font-black text-slate-800">{log.clientName}</h4>
                             <span className="bg-slate-100 text-slate-400 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest">{log.type}</span>
                          </div>
-                         <p className="text-[9px] text-slate-300 font-black uppercase tracking-tighter">UID: {log.UserId}</p>
+                         <p className="text-[9px] text-slate-300 font-black uppercase tracking-tighter">UserId: {log.UserId}</p>
                       </div>
                    </div>
                    <div className="text-right">
-                      <p className="text-emerald-500 font-black text-[11px] mb-0.5">已送出</p>
+                      <p className="text-emerald-500 font-black text-[11px] mb-0.5">發送成功</p>
                       <p className="text-[10px] text-slate-300 font-bold">{new Date(log.timestamp).toLocaleString()}</p>
                    </div>
                 </div>
@@ -372,7 +353,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         </div>
       )}
 
-      {/* 預約彈窗保持不變 */}
       {showResModal && (
         <div className="fixed inset-0 z-[500] bg-slate-900/10 backdrop-blur-md flex items-center justify-center p-4">
            <div className="bg-white rounded-3xl border border-slate-100 w-full max-w-md p-10 shadow-2xl">
@@ -392,7 +372,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                    ))}
                 </div>
               ) : (
-                <div className="space-y-6 animate-fade-in">
+                <div className="space-y-6 animate-fade-in text-left">
                    <div className="p-6 bg-slate-50 rounded-2xl flex justify-between items-center">
                       <span className="text-sm font-black text-slate-800">對象：{selectedCustomer.name}</span>
                       <button onClick={() => setSelectedCustomer(null)} className="text-[11px] font-black text-blue-500 underline">切換</button>

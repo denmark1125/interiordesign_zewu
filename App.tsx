@@ -36,7 +36,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    let timeoutId: NodeJS.Timeout;
+    // Fixed: Replaced NodeJS.Timeout with ReturnType<typeof setTimeout> to resolve namespace error in browser environment
+    let timeoutId: ReturnType<typeof setTimeout>;
 
     const resetTimer = () => {
       if (timeoutId) clearTimeout(timeoutId);
