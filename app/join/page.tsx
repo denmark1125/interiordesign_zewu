@@ -30,7 +30,6 @@ const JoinContent = () => {
   useEffect(() => {
     const initLiff = async () => {
       try {
-        // 1. 提取管道來源
         const source = searchParams.get('src') || searchParams.get('source') || 'direct';
 
         setStatus('正在連接 LINE...');
@@ -45,25 +44,21 @@ const JoinContent = () => {
         setStatus('正在同步追蹤數據...');
         const profile = await liff.getProfile();
 
-        // 2. 寫入行銷追蹤數據 (CRM 核心)
-        const userSourceRef = doc(db, "user_sources", profile.userId);
-        await setDoc(userSourceRef, {
-          userId: profile.userId,
+        // 核心邏輯：將 isBound 設為 false，這樣資料才會進入後台的「流量池」
+        const connectionRef = doc(db, "line_connections", profile.userId);
+        await setDoc(connectionRef, {
+          userId: profile.userId, 
           displayName: profile.displayName,
-          lineUserId: profile.displayName,
           source: source,
           pictureUrl: profile.pictureUrl || '',
+          timestamp: serverTimestamp(), 
+          isBound: false, // 關鍵：標記為未綁定
           platform: 'LIFF_JOIN_PAGE',
-          createdAt: serverTimestamp(),
           lastSeen: Date.now()
         }, { merge: true });
 
         setStatus('即將進入官方帳號...');
-        
-        // 3. 執行跳轉
         window.location.replace(LINE_OA_URL);
-
-        // 防呆：3 秒後若沒跳轉則顯示按鈕
         setTimeout(() => setShowManualBtn(true), 3000);
 
       } catch (err: any) {
@@ -107,11 +102,6 @@ const JoinContent = () => {
             <ExternalLink className="w-4 h-4" />
           </button>
         )}
-      </div>
-
-      <div className="absolute bottom-12 flex items-center gap-2 opacity-10">
-        <MessageCircle className="w-4 h-4" />
-        <span className="text-[10px] font-black uppercase tracking-[0.3em]">Official Service Bridge</span>
       </div>
     </div>
   );

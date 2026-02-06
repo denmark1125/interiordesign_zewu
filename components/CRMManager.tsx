@@ -46,16 +46,19 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       setCustomers(snap.docs.map(d => ({ ...d.data(), id: d.id }) as Customer));
     });
     
-    // 監聽流量池 (LINE 好友) - 唯一數據源 line_connections
+    // 監聽流量池 (LINE 好友)
     const unsubInbox = onSnapshot(query(lineConnectionsCollection, orderBy("timestamp", "desc")), (snap) => {
       const connections = snap.docs.map(d => {
         const data = d.data();
-        
-        // 對齊 line_connections 欄位 (userId, displayName, pictureUrl, source)
-        const uid = (data.userId || data.UserId || "").toString().trim();
+        const uid = (data.userId || data.UserId || data.uid || "").toString().trim();
         const name = data.displayName || data.lineUserId || "未知用戶";
         const pic = data.pictureUrl || data.linePictureUrl || '';
         const srcTag = data.source || data.src || '直接搜尋';
+        
+        let ts = data.timestamp;
+        if (ts && typeof ts === 'object' && ts.seconds) {
+            ts = ts.seconds * 1000;
+        }
 
         return {
           id: d.id,
@@ -63,9 +66,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
           lineUserId: name,
           linePictureUrl: pic,
           source: srcTag,
-          isBound: data.isBound === true 
+          timestamp: ts || Date.now(),
+          isBound: data.isBound === true // 明確抓取 isBound 狀態
         } as LineConnection;
-      }).filter(i => i.UserId && i.UserId.startsWith('U')); 
+      }).filter(i => i.UserId && i.UserId.startsWith('U'));
+      
       setRawLineInbox(connections);
     });
 
@@ -80,7 +85,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     return () => { unsubCustomers(); unsubInbox(); unsubRes(); unsubLogs(); };
   }, []);
 
-  const lineInbox = useMemo(() => rawLineInbox.filter(item => !item.isBound), [rawLineInbox]);
+  // 流量池邏輯：只顯示 isBound 為 false (或是沒寫入 isBound 欄位) 的人
+  const lineInbox = useMemo(() => {
+    return rawLineInbox.filter(item => item.isBound === false);
+  }, [rawLineInbox]);
+
   const filteredCustomers = useMemo(() => customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())), [customers, searchTerm]);
 
   const isLineLinked = (customer: Customer) => {
@@ -99,11 +108,12 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         UserId: item.UserId,
         lineUserId: item.lineUserId,
         linePictureUrl: item.linePictureUrl,
-        // 直接從 line_connections 的 item 中帶入來源標籤
         tags: [item.source || '直接搜尋'],
         createdAt: Date.now()
       };
+      // 1. 寫入客戶表
       await setDoc(doc(db, "customers", newCustomer.id), newCustomer);
+      // 2. 更新連線表狀態，標記為「已綁定」，使其從流量池消失
       await updateDoc(doc(db, "line_connections", item.id), { isBound: true });
       alert("✅ 已成功導入客戶資料夾");
     } catch (e) {
@@ -143,7 +153,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-200">
         <div>
           <h2 className="text-xl font-black text-slate-800 tracking-tight">案場客戶管理中心</h2>
-          <p className="text-xs text-slate-400 font-bold mt-0.5 uppercase tracking-wide">Single Source Mode (line_connections)</p>
+          <p className="text-xs text-slate-400 font-bold mt-0.5 uppercase tracking-wide">後台即時監控模式</p>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-sm">
           {[
@@ -286,7 +296,6 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
           {lineInbox.map(item => (
             <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-8 shadow-sm hover:shadow-lg transition-all flex flex-col text-center group relative overflow-hidden">
-              {/* 來源標記浮層 (直接讀取 item.source) */}
               <div className="absolute top-0 right-0 p-2">
                  <span className="bg-[#06C755] text-white px-3 py-1 rounded-bl-xl text-[9px] font-black shadow-sm flex items-center gap-1.5">
                    <Activity className="w-3 h-3" /> {item.source || '直接搜尋'}
