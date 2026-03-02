@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, FolderKanban, Menu, X, LogOut, Users, MessageCircle, UserCircle, ShieldAlert } from 'lucide-react';
 import { User } from '../types';
+import { db, doc, onSnapshot } from '../services/firebase';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -22,11 +23,24 @@ const ZewuIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, currentUser, onLogout }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMarketingPublic, setIsMarketingPublic] = useState(false);
+
+  useEffect(() => {
+    const unsubConfig = onSnapshot(doc(db, "system_configs", "line_analytics"), (docSnap) => {
+      if (docSnap.exists()) {
+        setIsMarketingPublic(docSnap.data().isPubliclyVisible || false);
+      }
+    });
+    return () => unsubConfig();
+  }, []);
 
   const canViewDashboard = currentUser.role === 'manager' || currentUser.role === 'engineer' || currentUser.canViewDashboard;
   const canManageTeam = currentUser.role === 'manager' || currentUser.role === 'engineer';
   const isEngineer = currentUser.role === 'engineer';
+  
+  // LINE 數據分析權限：工程師必看，管理員視設定而定
+  const canViewMarketing = isEngineer || (currentUser.role === 'manager' && isMarketingPublic);
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -60,8 +74,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, curre
             <UserCircle className="w-5 h-5 mr-3" /> 預約與 CRM
           </button>
 
-          {/* 限定工程師權限查看 LINE 數據分析 */}
-          {isEngineer && (
+          {/* LINE 數據分析權限控管 */}
+          {canViewMarketing && (
             <button onClick={() => { onTabChange('marketing'); setIsSidebarOpen(false); }} className={`flex items-center w-full px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'marketing' ? 'bg-[#54534d] text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
               <MessageCircle className="w-5 h-5 mr-3" /> LINE 數據分析
             </button>

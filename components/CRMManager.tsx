@@ -47,10 +47,10 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     });
     
     // 監聽流量池 (LINE 好友)
-    const unsubInbox = onSnapshot(query(lineConnectionsCollection, orderBy("timestamp", "desc")), (snap) => {
+    const unsubInbox = onSnapshot(lineConnectionsCollection, (snap) => {
       const connections = snap.docs.map(d => {
         const data = d.data();
-        const uid = (data.userId || data.UserId || data.uid || "").toString().trim();
+        const uid = (data.userId || data.UserId || data.uid || data.lineUserId || "").toString().trim();
         const name = data.displayName || data.lineUserId || "未知用戶";
         const pic = data.pictureUrl || data.linePictureUrl || '';
         const srcTag = data.source || data.src || '直接搜尋';
@@ -66,12 +66,22 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
           lineUserId: name,
           linePictureUrl: pic,
           source: srcTag,
-          timestamp: ts || Date.now(),
-          isBound: data.isBound === true // 明確抓取 isBound 狀態
+          timestamp: ts || 0,
+          isBound: !!data.isBound
         } as LineConnection;
-      }).filter(i => i.UserId && i.UserId.startsWith('U'));
+      })
+      .filter(i => i.UserId && i.UserId.startsWith('U'))
+      .sort((a, b) => b.timestamp - a.timestamp); // 降序：最近的在前
       
-      setRawLineInbox(connections);
+      // 記憶體內去重：同一個 UserId 只留最近的一筆
+      const uniqueMap = new Map<string, LineConnection>();
+      connections.forEach(c => {
+        if (!uniqueMap.has(c.UserId)) {
+          uniqueMap.set(c.UserId, c);
+        }
+      });
+      
+      setRawLineInbox(Array.from(uniqueMap.values()));
     });
 
     const unsubRes = onSnapshot(query(reservationsCollection, orderBy("dateTime", "asc")), (snap) => {
@@ -85,10 +95,11 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
     return () => { unsubCustomers(); unsubInbox(); unsubRes(); unsubLogs(); };
   }, []);
 
-  // 流量池邏輯：只顯示 isBound 為 false (或是沒寫入 isBound 欄位) 的人
+  // 流量池邏輯：去重，且排除已在客戶名單中的 UserId
   const lineInbox = useMemo(() => {
-    return rawLineInbox.filter(item => item.isBound === false);
-  }, [rawLineInbox]);
+    const boundUserIds = new Set(customers.map(c => (c.UserId || "").trim()).filter(Boolean));
+    return rawLineInbox.filter(item => !boundUserIds.has(item.UserId) && item.isBound === false);
+  }, [rawLineInbox, customers]);
 
   const filteredCustomers = useMemo(() => customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())), [customers, searchTerm]);
 
@@ -98,6 +109,19 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   };
 
   const handleAddCustomerFromInbox = async (item: LineConnection) => {
+    // 檢查是否已存在
+    const existing = customers.find(c => c.UserId === item.UserId);
+    if (existing) {
+      if (window.confirm(`此用戶「${item.lineUserId}」似乎已在客戶名單中（姓名：${existing.name}）。是否僅標記為已綁定？`)) {
+        setIsProcessing(true);
+        try {
+          await updateDoc(doc(db, "line_connections", item.id), { isBound: true });
+          alert("✅ 已更新狀態");
+        } catch (e) { alert("更新失敗"); } finally { setIsProcessing(false); }
+      }
+      return;
+    }
+
     if (!window.confirm(`要將「${item.lineUserId}」正式加入客戶清單嗎？`)) return;
     setIsProcessing(true);
     try {

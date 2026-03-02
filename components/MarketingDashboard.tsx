@@ -13,7 +13,7 @@ interface MarketingDashboardProps {
 type TimeRange = 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'CUSTOM' | 'ALL';
 
 const LIFF_BASE_URL = "https://liff.line.me/2008826901-DGGr1P8u";
-const BASELINE_FRIENDS = 867;
+const BASELINE_FRIENDS = 984;
 const BASELINE_DATE_MS = new Date('2025-01-14T00:00:00').getTime();
 
 const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, metrics }) => {
@@ -34,15 +34,14 @@ const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, me
 
   // 1. 監聽連線數據 (line_connections)
   useEffect(() => {
-    const q = query(lineConnectionsCollection, orderBy("timestamp", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setRawConnections(snapshot.docs.map(doc => {
+    const unsubscribe = onSnapshot(lineConnectionsCollection, (snapshot) => {
+      const connections = snapshot.docs.map(doc => {
         const data = doc.data();
-        const uid = (data.userId || data.UserId || "").toString().trim();
+        const uid = (data.userId || data.UserId || data.uid || data.lineUserId || "").toString().trim();
         const name = data.displayName || data.lineUserId || "未知用戶";
         const pic = data.pictureUrl || data.linePictureUrl || "";
         const srcTag = data.source || data.src || "直接搜尋/名片";
-        const ts = data.timestamp?.seconds ? data.timestamp.seconds * 1000 : data.timestamp;
+        const ts = data.timestamp?.seconds ? data.timestamp.seconds * 1000 : (data.timestamp || 0);
 
         return { 
           ...data, 
@@ -51,9 +50,26 @@ const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, me
           lineUserId: name,
           linePictureUrl: pic,
           source: srcTag,
-          timestamp: ts
+          timestamp: ts,
+          isBound: !!data.isBound
         } as LineConnection;
-      }).filter(i => i.UserId && i.UserId.startsWith('U')));
+      })
+      .filter(i => i.UserId && i.UserId.startsWith('U'))
+      .sort((a, b) => a.timestamp - b.timestamp); // 升序：最早的在前，確保去重時保留「初次進站」紀錄
+      
+      // 記憶體內去重：同一個 UserId 只留最早的一筆 (First Touch Attribution)
+      const uniqueMap = new Map<string, LineConnection>();
+      connections.forEach(c => {
+        if (!uniqueMap.has(c.UserId)) {
+          uniqueMap.set(c.UserId, c);
+        }
+      });
+      
+      // 轉回降序供趨勢圖與列表使用
+      const uniqueConnections = Array.from(uniqueMap.values())
+        .sort((a, b) => b.timestamp - a.timestamp);
+      
+      setRawConnections(uniqueConnections);
     });
     return () => unsubscribe();
   }, []);
@@ -125,11 +141,9 @@ const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, me
   }, [rawConnections, rangeTimeLimits]);
 
   const stats = useMemo(() => {
-    const connectionsUntilEnd = rawConnections.filter(c => c.timestamp > BASELINE_DATE_MS && c.timestamp <= rangeTimeLimits.endMs).length;
-    const currentTotal = BASELINE_FRIENDS + connectionsUntilEnd - manualBlockedCount;
     const rangeGrowth = filteredConnections.length;
-    return { currentTotal, rangeGrowth, totalGained: connectionsUntilEnd };
-  }, [rawConnections, filteredConnections, rangeTimeLimits, manualBlockedCount]);
+    return { rangeGrowth };
+  }, [filteredConnections]);
 
   const filteredMarketingLinks = useMemo(() => {
     if (!linkSearchTerm.trim()) return marketingLinks;
@@ -200,7 +214,7 @@ const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, me
       {activeTab === 'analytics' && (
         <div className="space-y-4 animate-fade-in">
            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-              <div className="md:col-span-8 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4">
+              <div className="md:col-span-12 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex bg-slate-50 p-1 rounded-xl items-center gap-1 overflow-x-auto">
                       {(['THIS_WEEK', 'LAST_WEEK', 'THIS_MONTH', 'ALL', 'CUSTOM'] as TimeRange[]).map(r => (
@@ -232,31 +246,13 @@ const MarketingDashboard: React.FC<MarketingDashboardProps> = ({ currentUser, me
                     </div>
                   )}
               </div>
-
-              <div className="md:col-span-4 bg-slate-900 p-4 rounded-2xl shadow-lg border border-slate-800 flex flex-col justify-center">
-                 <div className="flex justify-between items-center mb-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><ShieldX className="w-3.5 h-3.5 text-red-400" /> 手動輸入封鎖人數</label>
-                 </div>
-                 <input type="number" value={manualBlockedCount} onChange={(e) => handleUpdateBlockedCount(e.target.value)} placeholder="輸入官方後台封鎖數" className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-black text-white outline-none focus:ring-1 focus:ring-red-500/50 transition-all" />
-              </div>
            </div>
 
-           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group">
-                 <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity"><Users className="w-10 h-10" /></div>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">好友總數 ({timeRange === 'ALL' ? '目前' : '截止時區間'})</p>
-                 <h4 className="text-2xl font-black text-slate-800">{stats.currentTotal}</h4>
-                 <div className="text-[9px] text-emerald-500 font-bold mt-0.5">基準後新增累積 +{stats.totalGained}</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm group">
                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">區間內淨增長</p>
                  <h4 className="text-2xl font-black text-blue-500">{stats.rangeGrowth}</h4>
                  <div className="text-[9px] text-slate-300 font-bold mt-0.5">選定日期內</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">校正排除(封鎖)</p>
-                 <h4 className="text-2xl font-black text-red-400">{manualBlockedCount}</h4>
-                 <div className="text-[9px] text-slate-300 font-bold mt-0.5">總封鎖率約 {stats.totalGained > 0 ? ((manualBlockedCount / (stats.totalGained + manualBlockedCount)) * 100).toFixed(1) : 0}%</div>
               </div>
               <div className="bg-slate-900 p-5 rounded-2xl shadow-sm text-white">
                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">平均日增長</p>

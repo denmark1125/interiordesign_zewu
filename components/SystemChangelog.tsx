@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { SystemLog, User } from '../types';
 import { Shield, Zap, Plus, X, Clock, Trash2, Send, CheckCircle2, Loader2, Activity, UserCheck } from 'lucide-react';
-import { db, systemLogsCollection, onSnapshot, query, orderBy, setDoc, doc, deleteDoc } from '../services/firebase';
+import { db, systemLogsCollection, onSnapshot, query, orderBy, setDoc, doc, deleteDoc, serverTimestamp } from '../services/firebase';
 
 const FINAL_WEBHOOK_URL = "https://hook.us2.make.com/qrp5dyybwi922p68c1rrfpr6ud8yuv9r"; 
 
@@ -12,11 +12,38 @@ interface SystemChangelogProps {
 }
 
 const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users }) => {
-  const [activeTab, setActiveTab] = useState<'logs' | 'access' | 'debug'>('logs');
+  const [activeTab, setActiveTab] = useState<'logs' | 'access' | 'debug' | 'permissions'>('logs');
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   
-  // 成員活動排序 (依最後登入時間排序)
+  // 權限設定狀態
+  const [isMarketingPublic, setIsMarketingPublic] = useState(false);
+  const [isUpdatingPermission, setIsUpdatingPermission] = useState(false);
+
+  useEffect(() => {
+    const unsubConfig = onSnapshot(doc(db, "system_configs", "line_analytics"), (docSnap) => {
+      if (docSnap.exists()) {
+        setIsMarketingPublic(docSnap.data().isPubliclyVisible || false);
+      }
+    });
+    return () => unsubConfig();
+  }, []);
+
+  const handleToggleMarketingPermission = async () => {
+    setIsUpdatingPermission(true);
+    try {
+      await setDoc(doc(db, "system_configs", "line_analytics"), { 
+        isPubliclyVisible: !isMarketingPublic,
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser.name
+      }, { merge: true });
+      alert(`✅ 已${!isMarketingPublic ? '開啟' : '關閉'} LINE 數據分析對非工程師的權限`);
+    } catch (e) {
+      alert('更新失敗');
+    } finally {
+      setIsUpdatingPermission(false);
+    }
+  };
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
   }, [users]);
@@ -93,8 +120,37 @@ const SystemChangelog: React.FC<SystemChangelogProps> = ({ currentUser, users })
             <button onClick={() => setActiveTab('logs')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'logs' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>系統日誌</button>
             <button onClick={() => setActiveTab('access')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'access' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>成員監測</button>
             <button onClick={() => setActiveTab('debug')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'debug' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>連線診斷</button>
+            <button onClick={() => setActiveTab('permissions')} className={`px-6 py-2.5 text-xs font-black rounded-xl transition-all ${activeTab === 'permissions' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>權限管理</button>
         </div>
       </div>
+
+      {activeTab === 'permissions' && (
+        <div className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm animate-slide-up space-y-8">
+           <div className="flex items-center gap-4">
+              <div className="p-4 bg-blue-50 rounded-2xl"><Shield className="w-8 h-8 text-blue-500" /></div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800">系統權限管理</h3>
+                <p className="text-sm text-slate-400 font-bold">由工程師控制各模組的開放狀態。</p>
+              </div>
+           </div>
+           
+           <div className="space-y-4">
+              <div className="flex items-center justify-between p-8 bg-slate-50 rounded-[32px] border border-slate-100">
+                 <div className="text-left">
+                    <h4 className="font-black text-slate-800 text-lg">LINE 數據分析模組</h4>
+                    <p className="text-xs text-slate-400 font-bold mt-1">開啟後，管理員 (Manager) 角色亦可查看此分頁。</p>
+                 </div>
+                 <button 
+                  onClick={handleToggleMarketingPermission}
+                  disabled={isUpdatingPermission}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${isMarketingPublic ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                 >
+                    <span className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${isMarketingPublic ? 'translate-x-7' : 'translate-x-1'}`} />
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
 
       {activeTab === 'access' && (
         <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
