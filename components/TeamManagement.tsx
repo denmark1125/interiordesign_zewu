@@ -94,6 +94,17 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ users, currentUser, onA
       alert("您無法刪除自己的帳號。");
       return;
     }
+
+    const targetUser = users.find(u => u.id === id);
+    if (targetUser?.role === 'engineer' && currentUser.role !== 'engineer') {
+      alert("系統保護：只有工程師可以刪除工程師帳號。");
+      return;
+    }
+
+    if (targetUser?.role === 'engineer') {
+      const confirmEngineerDelete = window.confirm(`【極高風險動作】\n\n您正在嘗試刪除工程師「${name}」。\n這可能會導致系統維護權限喪失。\n\n您確定要繼續嗎？`);
+      if (!confirmEngineerDelete) return;
+    }
     
     const confirmDelete = window.confirm(`【危險動作】\n\n您確定要永久刪除成員「${name}」嗎？\n\n1. 該成員將立即無法登入。\n2. 此操作無法復原。`);
     if (confirmDelete) {
@@ -189,7 +200,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ users, currentUser, onA
                 >
                   <option value="employee">設計師 (Employee)</option>
                   <option value="manager">管理員 (Manager)</option>
-                  <option value="engineer">工程師 (Engineer)</option>
+                  {currentUser.role === 'engineer' && <option value="engineer">工程師 (Engineer)</option>}
                 </select>
               </div>
               
@@ -248,7 +259,9 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ users, currentUser, onA
                     >
                       <option value="employee">設計師</option>
                       <option value="manager">管理員</option>
-                      <option value="engineer">工程師</option>
+                      {(currentUser.role === 'engineer' || editRole === 'engineer') && (
+                        <option value="engineer" disabled={currentUser.role !== 'engineer'}>工程師</option>
+                      )}
                     </select>
                 </div>
                 <div>
@@ -306,10 +319,12 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ users, currentUser, onA
                    </div>
                    
                    <div className="flex gap-3">
-                      <button onClick={() => startEdit(user)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm">
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      {user.id !== currentUser.id && (
+                      {(currentUser.role === 'engineer' || user.role !== 'engineer') && (
+                        <button onClick={() => startEdit(user)} className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      {user.id !== currentUser.id && (currentUser.role === 'engineer' || user.role !== 'engineer') && (
                         <button onClick={() => handleDelete(user.id, user.name)} className="p-2 bg-red-50 border border-red-100 rounded-lg text-red-500 hover:bg-red-100 transition-all shadow-sm">
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -373,7 +388,9 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ users, currentUser, onA
                     >
                       <option value="employee">設計師</option>
                       <option value="manager">管理員</option>
-                      <option value="engineer">工程師</option>
+                      {(currentUser.role === 'engineer' || editRole === 'engineer') && (
+                        <option value="engineer" disabled={currentUser.role !== 'engineer'}>工程師</option>
+                      )}
                     </select>
                   ) : (
                     renderRoleBadge(user.role)
@@ -429,11 +446,13 @@ const TeamManagement: React.FC<TeamManagementProps> = ({ users, currentUser, onA
                     </div>
                   ) : (
                     <div className="flex items-center justify-end gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => startEdit(user)} className="text-slate-400 hover:text-accent p-2 hover:bg-slate-50 rounded-lg transition-colors" title="編輯/重設密碼">
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                      {(currentUser.role === 'engineer' || user.role !== 'engineer') && (
+                        <button onClick={() => startEdit(user)} className="text-slate-400 hover:text-accent p-2 hover:bg-slate-50 rounded-lg transition-colors" title="編輯/重設密碼">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
                       
-                      {user.id !== currentUser.id && (
+                      {user.id !== currentUser.id && (currentUser.role === 'engineer' || user.role !== 'engineer') && (
                         <button 
                           onClick={() => handleDelete(user.id, user.name)} 
                           className="flex items-center gap-1 text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors text-xs font-bold" 
