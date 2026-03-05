@@ -36,6 +36,8 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
   const [isProcessing, setIsProcessing] = useState(false);
   const [resDate, setResDate] = useState('');
   const [resType, setResType] = useState<string>('諮詢');
+  const [isCustom, setIsCustom] = useState(false);
+  const [customType, setCustomType] = useState('');
 
   const [showResModal, setShowResModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -391,7 +393,7 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
            <div className="bg-white rounded-3xl border border-slate-100 w-full max-w-md p-10 shadow-2xl">
               <div className="flex justify-between items-center mb-8">
                  <h3 className="text-xl font-black text-slate-800 tracking-tight">建立預約通知</h3>
-                 <button onClick={() => { setShowResModal(false); setSelectedCustomer(null); }} className="p-1.5 hover:bg-slate-50 rounded-full"><X className="w-6 h-6 text-slate-200"/></button>
+                 <button onClick={() => { setShowResModal(false); setSelectedCustomer(null); setIsCustom(false); setCustomType(''); }} className="p-1.5 hover:bg-slate-50 rounded-full"><X className="w-6 h-6 text-slate-200"/></button>
               </div>
               
               {!selectedCustomer ? (
@@ -416,15 +418,29 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                    </div>
                    <div>
                       <label className="text-[9px] font-black text-slate-400 uppercase mb-3 block tracking-widest">事項類別</label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-2 mb-3">
                          {['諮詢', '丈量', '看圖', '簽約'].map(type => (
-                           <button key={type} onClick={() => setResType(type)} className={`py-3 rounded-xl text-xs font-black transition-all ${resType === type ? 'bg-slate-800 text-white shadow-lg' : 'bg-slate-50 text-slate-400'}`}>{type}</button>
+                           <button key={type} onClick={() => { setResType(type); setIsCustom(false); }} className={`py-3 rounded-xl text-[10px] font-black transition-all ${!isCustom && resType === type ? 'bg-slate-800 text-white shadow-lg' : 'bg-slate-50 text-slate-400'}`}>{type}</button>
                          ))}
+                         <button onClick={() => setIsCustom(true)} className={`py-3 rounded-xl text-[10px] font-black transition-all ${isCustom ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-50 text-slate-400'}`}>其他</button>
                       </div>
+                      {isCustom && (
+                        <input 
+                          type="text" 
+                          value={customType} 
+                          onChange={e => setCustomType(e.target.value)} 
+                          placeholder="請輸入類別 (如：報價)" 
+                          className={inputClass}
+                          autoFocus
+                        />
+                      )}
                    </div>
                    <button 
                     onClick={async () => {
                       if(!resDate) return alert("請選擇日期");
+                      const finalType = isCustom ? customType : resType;
+                      if (!finalType) return alert("請輸入或選擇事項類別");
+                      
                       setIsProcessing(true);
                       const uid = selectedCustomer.UserId || "";
                       const rid = `res-${Date.now()}`;
@@ -432,17 +448,17 @@ const CRMManager: React.FC<CRMManagerProps> = ({ currentUser, onConvertToProject
                         await setDoc(doc(db, "reservations", rid), {
                           id: rid, customerId: selectedCustomer.id, customerName: selectedCustomer.name, 
                           UserId: uid, lineUserId: selectedCustomer.lineUserId || selectedCustomer.name, dateTime: resDate, 
-                          type: resType, status: 'pending', createdAt: Date.now()
+                          type: finalType, status: 'pending', createdAt: Date.now()
                         });
                         if (uid) {
-                          const params = new URLSearchParams({ UserId: uid, clientName: selectedCustomer.name, serviceName: resType, appointmentTime: resDate.replace('T', ' ') });
+                          const params = new URLSearchParams({ UserId: uid, clientName: selectedCustomer.name, serviceName: finalType, appointmentTime: resDate.replace('T', ' ') });
                           await fetch(`${MAKE_IMMEDIATE_WEBHOOK_URL}?${params.toString()}`, { method: 'POST', mode: 'no-cors' });
                           const lid = `log-${Date.now()}`;
                           await setDoc(doc(db, "webhook_logs", lid), {
-                            id: lid, timestamp: Date.now(), UserId: uid, clientName: selectedCustomer.name, type: resType, status: 'sent', operator: currentUser.name
+                            id: lid, timestamp: Date.now(), UserId: uid, clientName: selectedCustomer.name, type: finalType, status: 'sent', operator: currentUser.name
                           });
                         }
-                        setShowResModal(false); setSelectedCustomer(null); alert("✅ 預約已送出");
+                        setShowResModal(false); setSelectedCustomer(null); setIsCustom(false); setCustomType(''); alert("✅ 預約已送出");
                       } catch(e) { alert("失敗"); } finally { setIsProcessing(false); }
                     }} 
                     className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black text-sm shadow-xl flex justify-center items-center gap-2 active:scale-95 transition-all"
